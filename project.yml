@@ -1,0 +1,80 @@
+name: Xeditor
+options:
+  bundleIdPrefix: com.xeditor
+  deploymentTarget:
+    macOS: "14.0"
+  createIntermediateGroups: true
+  groupSortPosition: top
+
+settings:
+  base:
+    SWIFT_VERSION: "5.0"
+    MACOSX_DEPLOYMENT_TARGET: "14.0"
+    CLANG_CXX_LANGUAGE_STANDARD: c++20
+    CLANG_CXX_LIBRARY: libc++
+    CLANG_ENABLE_OBJC_ARC: YES
+    GCC_ENABLE_CPP_EXCEPTIONS: YES
+    GCC_ENABLE_CPP_RTTI: YES
+    GCC_ENABLE_OBJC_EXCEPTIONS: YES
+    ENABLE_HARDENED_RUNTIME: NO
+    CODE_SIGN_STYLE: Manual
+    CODE_SIGN_IDENTITY: "-"
+    DEVELOPMENT_TEAM: ""
+
+targets:
+  Xeditor:
+    type: application
+    platform: macOS
+    sources:
+      - path: Xeditor
+      # Scintilla editor core (upstream 5.x). Restrict to code so build-system
+      # files (makefiles, .pro, scripts) are not copied into the app bundle.
+      - path: ThirdParty/scintilla/src
+        includes: ["**/*.cxx", "**/*.h"]
+      - path: ThirdParty/scintilla/cocoa
+        includes: ["**/*.mm", "**/*.m", "**/*.h"]
+        excludes:
+          - "ScintillaTest/**"
+          - "Scintilla/**"
+          - "res/**"
+      # Lexilla lexers (upstream 5.x)
+      - path: ThirdParty/lexilla/src
+        includes: ["**/*.cxx", "**/*.h"]
+        excludes:
+          - "Lexilla/**"
+      - path: ThirdParty/lexilla/lexers
+        includes: ["**/*.cxx", "**/*.h"]
+      - path: ThirdParty/lexilla/lexlib
+        includes: ["**/*.cxx", "**/*.h"]
+    # An explicit plist keeps XcodeGen from picking up Scintilla's demo
+    # ThirdParty/scintilla/cocoa/Scintilla/Info.plist as the app's Info.plist.
+    info:
+      path: Xeditor/Info.plist
+      properties:
+        CFBundleDisplayName: Xeditor
+        CFBundleShortVersionString: "$(MARKETING_VERSION)"
+        CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
+        LSApplicationCategoryType: public.app-category.developer-tools
+        LSMinimumSystemVersion: "$(MACOSX_DEPLOYMENT_TARGET)"
+        NSHumanReadableCopyright: "GPLv3"
+        NSHighResolutionCapable: true
+    settings:
+      base:
+        PRODUCT_NAME: Xeditor
+        PRODUCT_BUNDLE_IDENTIFIER: com.xeditor.app
+        MARKETING_VERSION: "0.1.0"
+        CURRENT_PROJECT_VERSION: "1"
+        SWIFT_OBJC_BRIDGING_HEADER: "$(SRCROOT)/Xeditor/Editor/Xeditor-Bridging-Header.h"
+        HEADER_SEARCH_PATHS:
+          - "$(SRCROOT)/ThirdParty/scintilla/include"
+          - "$(SRCROOT)/ThirdParty/scintilla/src"
+          - "$(SRCROOT)/ThirdParty/scintilla/cocoa"
+          - "$(SRCROOT)/ThirdParty/lexilla/include"
+          - "$(SRCROOT)/ThirdParty/lexilla/lexlib"
+          - "$(SRCROOT)/ThirdParty/lexilla/src"
+        GCC_PREPROCESSOR_DEFINITIONS:
+          - "$(inherited)"
+          - "SCI_LEXER"
+    dependencies:
+      - sdk: AppKit.framework
+      - sdk: Cocoa.framework
