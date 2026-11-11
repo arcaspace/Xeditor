@@ -68,6 +68,17 @@ final class StatusBarView: NSView {
         addSubview(button)
     }
 
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        // Layer colours are resolved once; refresh them for theme switches.
+        // Resolve inside the new appearance: NSAppearance.current is still the
+        // old one here, so a bare `.cgColor` would keep the old colours.
+        effectiveAppearance.performAsCurrentDrawingAppearance {
+            layer?.backgroundColor = NSColor.windowBackgroundColor.cgColor
+            topBorder.layer?.backgroundColor = NSColor.separatorColor.cgColor
+        }
+    }
+
     override func layout() {
         super.layout()
         let h = bounds.height

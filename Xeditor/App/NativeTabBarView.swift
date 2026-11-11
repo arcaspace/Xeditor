@@ -113,32 +113,39 @@ final class NativeTabItemView: NSView {
 
     private func updateAppearance() {
         let isDark = effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
-
         // Title font weight
         titleLabel.font = isSelected ? NSFont.systemFont(ofSize: 12, weight: .medium)
                                      : NSFont.systemFont(ofSize: 12, weight: .regular)
         titleLabel.textColor = isSelected ? .labelColor : .secondaryLabelColor
 
         // Flat tab backgrounds, Terminal style: selected is lighter than the bar,
-        // hovered tabs get a subtle lift.
-        if isSelected {
-            layer?.backgroundColor = (isDark
-                ? NSColor.white.withAlphaComponent(0.10)
-                : NSColor.white.withAlphaComponent(0.85)).cgColor
-        } else if isHovered {
-            layer?.backgroundColor = NSColor.labelColor.withAlphaComponent(isDark ? 0.06 : 0.04).cgColor
-        } else {
-            layer?.backgroundColor = NSColor.clear.cgColor
-        }
+        // hovered tabs get a subtle lift. Resolve inside the view's appearance —
+        // NSAppearance.current is not necessarily this view's during a theme switch.
+        effectiveAppearance.performAsCurrentDrawingAppearance {
+            if isSelected {
+                layer?.backgroundColor = (isDark
+                    ? NSColor.white.withAlphaComponent(0.10)
+                    : NSColor.white.withAlphaComponent(0.85)).cgColor
+            } else if isHovered {
+                layer?.backgroundColor = NSColor.labelColor.withAlphaComponent(isDark ? 0.06 : 0.04).cgColor
+            } else {
+                layer?.backgroundColor = NSColor.clear.cgColor
+            }
 
-        // Full-height hairline divider, low contrast so it reads as a tab boundary
-        // rather than a floating black dash.
-        separatorView.layer?.backgroundColor =
-            NSColor.labelColor.withAlphaComponent(isDark ? 0.12 : 0.08).cgColor
+            // Full-height hairline divider, low contrast so it reads as a tab
+            // boundary rather than a floating black dash.
+            separatorView.layer?.backgroundColor =
+                NSColor.labelColor.withAlphaComponent(isDark ? 0.12 : 0.08).cgColor
+        }
 
         // Close button appears only while hovering; otherwise show the dirty dot.
         closeButton.isHidden = !isHovered
         dirtyIndicator.isHidden = isHovered || !document.isDirty
+    }
+
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        updateAppearance()
     }
 
     override func updateTrackingAreas() {
@@ -203,7 +210,7 @@ final class NativeTabItemView: NSView {
 final class NativeTabBarView: NSView {
     weak var delegate: NativeTabBarDelegate?
 
-    private let stackView = NSStackView()
+    private let stackView = PassthroughStackView()
     private let newTabButton = NSButton()
     private let bottomBorder = NSView()
 
@@ -247,6 +254,31 @@ final class NativeTabBarView: NSView {
         bottomBorder.wantsLayer = true
         bottomBorder.layer?.backgroundColor = NSColor.separatorColor.cgColor
         addSubview(bottomBorder)
+    }
+
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        // Resolve inside the new appearance: in this callback NSAppearance.current
+        // is still the old one, so a bare `.cgColor` would keep the old colours.
+        effectiveAppearance.performAsCurrentDrawingAppearance {
+            layer?.backgroundColor = NSColor.windowBackgroundColor.cgColor
+            bottomBorder.layer?.backgroundColor = NSColor.separatorColor.cgColor
+        }
+    }
+
+    override func mouseDown(with event: NSEvent) {
+        // Double-clicking the empty part of the bar (right of the tabs) opens a
+        // new tab, matching Terminal / Safari. Tab items handle their own
+        // clicks, so only empty space arrives here.
+        guard event.clickCount == 2 else {
+            super.mouseDown(with: event)
+            return
+        }
+        let point = convert(event.locationInWindow, from: nil)
+        if newTabButton.frame.contains(point) { return }
+        let onTab = tabViews.contains { convert($0.bounds, from: $0).contains(point) }
+        guard !onTab else { return }
+        delegate?.tabBarDidClickNewTab()
     }
 
     override func layout() {
@@ -294,5 +326,14 @@ final class NativeTabBarView: NSView {
 
     @objc private func didClickNewTab() {
         delegate?.tabBarDidClickNewTab()
+    }
+}
+
+/// Stack view that only takes clicks landing on a tab item. Clicks on the empty
+/// area pass through to the tab bar, which handles double-click-to-new-tab.
+private final class PassthroughStackView: NSStackView {
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        let hit = super.hitTest(point)
+        return hit === self ? nil : hit
     }
 }

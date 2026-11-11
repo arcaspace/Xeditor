@@ -134,6 +134,16 @@ final class FindBarView: NSView, NSSearchFieldDelegate {
         addSubview(button)
     }
 
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        // Resolve inside the new appearance: NSAppearance.current is still the
+        // old one here, so a bare `.cgColor` would keep the old colours.
+        effectiveAppearance.performAsCurrentDrawingAppearance {
+            layer?.backgroundColor = NSColor.windowBackgroundColor.cgColor
+            bottomBorder.layer?.backgroundColor = NSColor.separatorColor.cgColor
+        }
+    }
+
     override func layout() {
         super.layout()
         let h = bounds.height

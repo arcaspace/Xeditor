@@ -7,6 +7,7 @@ protocol PreferencesDelegate: AnyObject {
 final class PreferencesWindowController: NSWindowController {
     weak var delegate: PreferencesDelegate?
 
+    private let themePopUp = NSPopUpButton()
     private let fontPopUp = NSPopUpButton()
     private let fontSizeSlider = NSSlider()
     private let fontSizeLabel = NSTextField(labelWithString: "13 pt")
@@ -21,7 +22,7 @@ final class PreferencesWindowController: NSWindowController {
     init(delegate: PreferencesDelegate?) {
         self.delegate = delegate
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 380, height: 320),
+            contentRect: NSRect(x: 0, y: 0, width: 380, height: 390),
             styleMask: [.titled, .closable],
             backing: .buffered,
             defer: false
@@ -41,7 +42,20 @@ final class PreferencesWindowController: NSWindowController {
     private func setupUI() {
         guard let contentView = window?.contentView else { return }
 
-        var y: CGFloat = 270
+        var y: CGFloat = 340
+
+        // ── Theme Section ──
+        let themeTitle = sectionLabel("Theme")
+        themeTitle.frame = NSRect(x: 20, y: y, width: 340, height: 18)
+        contentView.addSubview(themeTitle)
+        y -= 30
+
+        themePopUp.addItems(withTitles: EditorTheme.allCases.map(\.title))
+        themePopUp.target = self
+        themePopUp.action = #selector(onSettingChanged)
+        themePopUp.frame = NSRect(x: 20, y: y, width: 220, height: 24)
+        contentView.addSubview(themePopUp)
+        y -= 40
 
         // ── Font Section ──
         let fontTitle = sectionLabel("Editor Font")
@@ -144,6 +158,7 @@ final class PreferencesWindowController: NSWindowController {
 
     private func loadSettings() {
         let settings = EditorSettings.shared
+        themePopUp.selectItem(withTitle: settings.theme.title)
         if fontPopUp.indexOfItem(withTitle: settings.fontName) >= 0 {
             fontPopUp.selectItem(withTitle: settings.fontName)
         } else if fontPopUp.indexOfItem(withTitle: "Menlo") >= 0 {
@@ -180,6 +195,10 @@ final class PreferencesWindowController: NSWindowController {
 
     @objc private func onSettingChanged() {
         let settings = EditorSettings.shared
+        if let title = themePopUp.titleOfSelectedItem,
+           let theme = EditorTheme.allCases.first(where: { $0.title == title }) {
+            settings.theme = theme
+        }
         if let font = fontPopUp.titleOfSelectedItem {
             settings.fontName = font
         }

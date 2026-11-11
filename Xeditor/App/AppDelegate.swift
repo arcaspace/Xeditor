@@ -6,6 +6,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, PreferencesDelegate, G
     private var windowController: MainWindowController?
     private var preferencesController: PreferencesWindowController?
     private var goToLineController: GoToLineWindowController?
+    private var appearanceObservation: NSKeyValueObservation?
 
     private static let sessionFilesKey = "session.files"
     private static let sessionActiveKey = "session.activeIndex"
@@ -38,6 +39,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, PreferencesDelegate, G
 
         wc.mainVC.reloadAll()
         applyGlobalSettings()
+        observeSystemAppearance()
+    }
+
+    /// Re-resolve the editor theme when macOS switches between light and dark
+    /// while the "Follow System" theme is selected.
+    private func observeSystemAppearance() {
+        appearanceObservation = NSApp.observe(\.effectiveAppearance, options: [.new]) { [weak self] _, _ in
+            Task { @MainActor [weak self] in
+                guard let self, EditorSettings.shared.theme == .system else { return }
+                self.applyGlobalSettings()
+            }
+        }
     }
 
     func application(_ sender: NSApplication, openFiles filenames: [String]) {
@@ -91,8 +104,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate, PreferencesDelegate, G
     }
 
     private func applyGlobalSettings() {
+        let settings = EditorSettings.shared
+
+        // Theme the whole app, not just the editor: the window chrome, tab bar
+        // and Preferences window should match the chosen scheme.
+        switch settings.theme {
+        case .system:
+            NSApp.appearance = nil
+        case .light:
+            NSApp.appearance = NSAppearance(named: .aqua)
+        case .dark:
+            NSApp.appearance = NSAppearance(named: .darkAqua)
+        }
+
         for doc in store.documents {
-            EditorSettings.shared.apply(to: doc.editor)
+            settings.apply(to: doc.editor)
         }
     }
 
@@ -264,7 +290,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, PreferencesDelegate, G
         // 2. File Menu
         let fileMenuItem = NSMenuItem()
         let fileMenu = NSMenu(title: "File")
-        fileMenu.addItem(withTitle: "New Tab", action: #selector(newDocument(_:)), keyEquivalent: "n")
+        // ⌘T, matching Terminal's New Tab shortcut.
+        fileMenu.addItem(withTitle: "New Tab", action: #selector(newDocument(_:)), keyEquivalent: "t")
         fileMenu.addItem(withTitle: "Open…", action: #selector(openDocument(_:)), keyEquivalent: "o")
         fileMenu.addItem(NSMenuItem.separator())
         fileMenu.addItem(withTitle: "Save", action: #selector(saveDocument(_:)), keyEquivalent: "s")

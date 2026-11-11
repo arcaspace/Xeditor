@@ -1,10 +1,50 @@
 import AppKit
 import Foundation
 
+/// Editor colour scheme. `system` follows the current macOS appearance.
+enum EditorTheme: String, CaseIterable {
+    case system
+    case light
+    case dark
+
+    var title: String {
+        switch self {
+        case .system: return "Follow System"
+        case .light:  return "Light"
+        case .dark:   return "Dark"
+        }
+    }
+}
+
 final class EditorSettings {
     static let shared = EditorSettings()
 
     private let defaults = UserDefaults.standard
+
+    var theme: EditorTheme {
+        get {
+            guard let raw = defaults.string(forKey: "editor.theme"),
+                  let theme = EditorTheme(rawValue: raw) else {
+                return .system
+            }
+            return theme
+        }
+        set { defaults.set(newValue.rawValue, forKey: "editor.theme") }
+    }
+
+    /// Resolves the selected theme against the current system appearance.
+    var isDarkAppearance: Bool {
+        switch theme {
+        case .light:
+            return false
+        case .dark:
+            return true
+        case .system:
+            let match = NSApplication.shared.effectiveAppearance
+                .bestMatch(from: [.darkAqua, .aqua])
+            return match == .darkAqua
+        }
+    }
 
     var fontName: String {
         get { defaults.string(forKey: "editor.fontName") ?? "Menlo" }
@@ -56,6 +96,7 @@ final class EditorSettings {
     }
 
     func apply(to bridge: EditorBridge) {
+        bridge.applyThemeDark(isDarkAppearance)
         bridge.setEditorFont(fontName, size: fontSize)
         bridge.setTabWidth(tabWidth)
         bridge.setUseTabs(useTabs)

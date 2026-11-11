@@ -7,8 +7,15 @@
 #include "ILexer.h"
 #include "Lexilla.h"
 
+#include <ctype.h>
+
 // Lexilla exports this C entry point; when statically linked we declare it here.
 extern "C" Scintilla::ILexer5 *CreateLexer(const char *name);
+
+// Indicator used to mark every occurrence of the current selection.
+// Scintilla reserves 8 (container lexer), 32-35 (IME) and 36-43 (undo history),
+// so 20 is safely outside every reserved range.
+static const int INDICATOR_OCCURRENCE = 20;
 
 static int ColorRefFromNSColor(NSColor *color) {
     NSColor *rgb = [color colorUsingColorSpace:[NSColorSpace sRGBColorSpace]];
@@ -168,6 +175,14 @@ static NSStringEncoding detectEncoding(NSData *data) {
     // Caret line highlight
     [sci message:SCI_SETCARETLINEVISIBLE       wParam:1 lParam:0];
     [sci message:SCI_SETCARETLINEVISIBLEALWAYS  wParam:1 lParam:0];
+
+    // "Highlight all occurrences of the selection": a translucent rounded box
+    // drawn under the text so syntax colours stay readable. The colour itself
+    // is set per theme in applyThemeDark:.
+    [sci message:SCI_INDICSETSTYLE       wParam:INDICATOR_OCCURRENCE lParam:INDIC_ROUNDBOX];
+    [sci message:SCI_INDICSETUNDER       wParam:INDICATOR_OCCURRENCE lParam:1];
+    [sci message:SCI_INDICSETALPHA       wParam:INDICATOR_OCCURRENCE lParam:60];
+    [sci message:SCI_INDICSETOUTLINEALPHA wParam:INDICATOR_OCCURRENCE lParam:100];
 
     // Default font. "SF Mono" ships with Terminal/Xcode but is not installed as
     // a regular system font, so it silently resolved to Helvetica. Menlo is
@@ -838,6 +853,108 @@ static NSStringEncoding detectEncoding(NSData *data) {
 }
 
 // ---------------------------------------------------------------------------
+#pragma mark - Occurrence Highlight (called from SCN_UPDATEUI)
+// ---------------------------------------------------------------------------
+
+/// Debounced entry point. Selection changes arrive for every arrow-key step and
+/// every drag update, so wait briefly and only scan once the selection settles.
+- (void)scheduleOccurrenceHighlight {
+    [NSObject cancelPreviousPerformRequestsWithTarget:self
+                                             selector:@selector(updateOccurrenceHighlight)
+                                               object:nil];
+    [self performSelector:@selector(updateOccurrenceHighlight)
+               withObject:nil
+               afterDelay:0.04];
+}
+
+- (void)clearOccurrenceHighlight {
+    ScintillaView *sci = self.sci;
+    [sci message:SCI_SETINDICATORCURRENT wParam:INDICATOR_OCCURRENCE lParam:0];
+    [sci message:SCI_INDICATORCLEARRANGE wParam:0
+                                        lParam:[sci message:SCI_GETLENGTH wParam:0 lParam:0]];
+}
+
+- (void)updateOccurrenceHighlight {
+    ScintillaView *sci = self.sci;
+    sptr_t selStart = [sci message:SCI_GETSELECTIONSTART wParam:0 lParam:0];
+    sptr_t selEnd   = [sci message:SCI_GETSELECTIONEND   wParam:0 lParam:0];
+    sptr_t selLen   = selEnd - selStart;
+
+    // A collapsed caret means nothing is selected: drop any old highlight. A
+    // very long selection (a whole function, say) would light up most of the
+    // document, so it is ignored as well.
+    if (selLen <= 0 || selLen > 128) {
+        [self clearOccurrenceHighlight];
+        return;
+    }
+
+    char *needle = (char *)calloc((size_t)selLen + 1, 1);
+    if (!needle) {
+        return;
+    }
+    [sci message:SCI_GETSELTEXT wParam:0 lParam:(sptr_t)needle];
+    needle[selLen] = '\0';
+
+    // Multi-line selections are not "keywords"; skip them.
+    if (needle[0] == '\0' || strchr(needle, '\n') || strchr(needle, '\r')) {
+        free(needle);
+        [self clearOccurrenceHighlight];
+        return;
+    }
+
+    NSString *selected = [NSString stringWithUTF8String:needle] ?: @"";
+
+    // Smart case, like Xcode and VS Code: match case only when the selection
+    // actually contains an uppercase letter.
+    const BOOL hasUpper = ![selected isEqualToString:selected.lowercaseString];
+
+    // Whole-word matching only makes sense for plain identifiers; a phrase or a
+    // CJK run is matched literally anywhere.
+    BOOL identifier = YES;
+    for (const char *p = needle; *p; p++) {
+        unsigned char c = (unsigned char)*p;
+        if (!(isalnum(c) || c == '_')) {
+            identifier = NO;
+            break;
+        }
+    }
+
+    int flags = 0;
+    if (hasUpper) flags |= SCFIND_MATCHCASE;
+    if (identifier) flags |= SCFIND_WHOLEWORD;
+
+    const sptr_t docLen = [sci message:SCI_GETLENGTH wParam:0 lParam:0];
+
+    [sci message:SCI_SETINDICATORCURRENT wParam:INDICATOR_OCCURRENCE lParam:0];
+    [sci message:SCI_INDICATORCLEARRANGE wParam:0 lParam:docLen];
+
+    Sci_TextToFind ttf;
+    memset(&ttf, 0, sizeof(ttf));
+    ttf.chrg.cpMin = 0;
+    ttf.chrg.cpMax = (Sci_PositionCR)docLen;
+    ttf.lpstrText = needle;
+
+    // Cap the work on pathological documents (e.g. selecting "e" in a 5 MB
+    // log); the visible lines are highlighted long before the cap is reached.
+    static const NSInteger maxMatches = 20000;
+    NSInteger matched = 0;
+
+    while (ttf.chrg.cpMin < ttf.chrg.cpMax && matched < maxMatches) {
+        sptr_t pos = [sci message:SCI_FINDTEXT wParam:flags lParam:(sptr_t)&ttf];
+        if (pos < 0) break;
+
+        sptr_t from = ttf.chrgText.cpMin;
+        sptr_t to   = ttf.chrgText.cpMax;
+        if (to <= from) break;          // never spin on a zero-length match
+
+        [sci message:SCI_INDICATORFILLRANGE wParam:from lParam:to - from];
+        ttf.chrg.cpMin = (Sci_PositionCR)to;
+        matched++;
+    }
+    free(needle);
+}
+
+// ---------------------------------------------------------------------------
 #pragma mark - Auto-indent (called from SCN_CHARADDED)
 // ---------------------------------------------------------------------------
 
@@ -881,6 +998,9 @@ static NSStringEncoding detectEncoding(NSData *data) {
         case SCN_UPDATEUI:
             if (notification->updated & SC_UPDATE_SELECTION) {
                 [self handleBracketMatching];
+                [self scheduleOccurrenceHighlight];
+            } else if (notification->updated & SC_UPDATE_CONTENT) {
+                [self scheduleOccurrenceHighlight];
             }
             break;
         case SCN_CHARADDED:
@@ -932,10 +1052,13 @@ static NSStringEncoding detectEncoding(NSData *data) {
         caretLine  = [NSColor colorWithSRGBRed:0.15 green:0.15 blue:0.16 alpha:1.0];
         braceHL    = [NSColor colorWithSRGBRed:0.25 green:0.40 blue:0.30 alpha:1.0];
     } else {
-        background = [NSColor textBackgroundColor];
-        foreground = [NSColor textColor];
-        dim        = [NSColor secondaryLabelColor];
-        selection  = [NSColor selectedTextBackgroundColor];
+        // Explicit sRGB values, not dynamic system colours: textBackgroundColor
+        // & co. resolve against the system appearance, so with a forced light
+        // theme on a dark system they would still come back dark.
+        background = [NSColor colorWithSRGBRed:1.00 green:1.00 blue:1.00 alpha:1.0];
+        foreground = [NSColor colorWithSRGBRed:0.12 green:0.12 blue:0.14 alpha:1.0];
+        dim        = [NSColor colorWithSRGBRed:0.45 green:0.45 blue:0.47 alpha:1.0];
+        selection  = [NSColor colorWithSRGBRed:0.66 green:0.80 blue:0.96 alpha:1.0];
         caretLine  = [NSColor colorWithSRGBRed:0.93 green:0.95 blue:0.98 alpha:1.0];
         braceHL    = [NSColor colorWithSRGBRed:0.80 green:0.93 blue:0.80 alpha:1.0];
     }
@@ -967,6 +1090,31 @@ static NSStringEncoding detectEncoding(NSData *data) {
     // Caret line highlight
     [sci message:SCI_SETCARETLINEBACK  wParam:clBg lParam:0];
 
+    // Margins and fold gutter. The fold margin does not follow STYLE_DEFAULT:
+    // it paints a two-tone checkerboard built from the platform chrome
+    // colours, which stay light in dark mode. Point both colours at the editor
+    // background so the gutter matches the line-number margin.
+    [sci message:SCI_SETFOLDMARGINCOLOUR   wParam:1 lParam:bg];
+    [sci message:SCI_SETFOLDMARGINHICOLOUR wParam:1 lParam:bg];
+    for (int margin = 0; margin <= 2; margin++) {
+        [sci message:SCI_SETMARGINBACKN wParam:margin lParam:bg];
+    }
+
+    // Folder markers: the marker's fore colour fills the box, the back colour
+    // draws its frame, the +/- glyph and the connecting fold lines. The
+    // Scintilla default (black fill, white frame/lines) assumes a grey gutter;
+    // since the gutter now follows the editor background, white fold lines
+    // vanish in the light theme. Use a white box with black frame/lines there,
+    // and a grey box with light lines in dark mode.
+    const int foldFill = dark ? ColorRefFromNSColor(
+        [NSColor colorWithSRGBRed:0.55 green:0.55 blue:0.58 alpha:1.0]) : 0xFFFFFF;
+    const int foldLine = dark ? ColorRefFromNSColor(
+        [NSColor colorWithSRGBRed:0.75 green:0.75 blue:0.78 alpha:1.0]) : 0x000000;
+    for (int marker = SC_MARKNUM_FOLDEREND; marker <= SC_MARKNUM_FOLDEROPEN; marker++) {
+        [sci message:SCI_MARKERSETFORE wParam:marker lParam:foldFill];
+        [sci message:SCI_MARKERSETBACK wParam:marker lParam:foldLine];
+    }
+
     // Bracket matching styles
     const int brRef = ColorRefFromNSColor(braceHL);
     [sci message:SCI_STYLESETFORE  wParam:STYLE_BRACELIGHT lParam:fg];
@@ -975,6 +1123,15 @@ static NSStringEncoding detectEncoding(NSData *data) {
     [sci message:SCI_STYLESETFORE  wParam:STYLE_BRACEBAD
                              lParam:ColorRefFromNSColor([NSColor systemRedColor])];
     [sci message:SCI_STYLESETBOLD  wParam:STYLE_BRACEBAD lParam:1];
+
+    // Occurrence highlight: a warm amber that stands apart from both the
+    // syntax palette and the blue selection, so the current selection and its
+    // other occurrences stay distinguishable.
+    NSColor *occurrence = dark
+        ? [NSColor colorWithSRGBRed:0.95 green:0.72 blue:0.25 alpha:1.0]
+        : [NSColor colorWithSRGBRed:0.96 green:0.78 blue:0.30 alpha:1.0];
+    [sci message:SCI_INDICSETFORE wParam:INDICATOR_OCCURRENCE
+                                 lParam:ColorRefFromNSColor(occurrence)];
 }
 
 /// Lexilla assigns style numbers but no colours.  Map the common style indices

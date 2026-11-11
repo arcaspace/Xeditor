@@ -20,7 +20,7 @@ final class MainViewController: NSViewController, NativeTabBarDelegate, FindBarD
     }
 
     override func loadView() {
-        view = NSView(frame: NSRect(x: 0, y: 0, width: 800, height: 600))
+        view = AppearanceAwareView(frame: NSRect(x: 0, y: 0, width: 800, height: 600))
         view.wantsLayer = true
         view.layer?.backgroundColor = NSColor.windowBackgroundColor.cgColor
 
@@ -247,5 +247,19 @@ final class MainViewController: NSViewController, NativeTabBarDelegate, FindBarD
     func statusBarDidChangeEncoding(_ encoding: DocumentEncoding) {
         store.activeDocument?.reload(withEncoding: encoding)
         updateActiveDocumentContent()
+    }
+}
+
+// MARK: - Appearance-aware container
+
+/// Root container whose layer background is resolved from the current
+/// appearance. `NSColor.windowBackgroundColor.cgColor` snapshots the colour
+/// once, so it must be refreshed whenever the app theme changes.
+final class AppearanceAwareView: NSView {
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        effectiveAppearance.performAsCurrentDrawingAppearance {
+            layer?.backgroundColor = NSColor.windowBackgroundColor.cgColor
+        }
     }
 }
