@@ -69,7 +69,7 @@ final class EditorDocument: ObservableObject, Identifiable {
     init(url: URL? = nil, text: String? = nil) {
         let bridge = EditorBridge(frame: .zero)
         editor = bridge
-        language = url.flatMap { LanguagePreset.matching($0.pathExtension) } ?? .plain
+        language = url.flatMap { LanguagePreset.matching(url: $0) } ?? .plain
 
         if let url {
             bridge.loadFile(url.path)
@@ -79,6 +79,7 @@ final class EditorDocument: ObservableObject, Identifiable {
             encoding = .utf8
         }
         bridge.setLexerName(language.lexer)
+        bridge.setKeywordSets(LanguageKeywords.sets(for: language.name))
         self.url = url
         lineCount = Int(bridge.lineCount())
         cursorLine = Int(bridge.currentLine())
@@ -114,6 +115,7 @@ final class EditorDocument: ObservableObject, Identifiable {
     func setLanguage(_ preset: LanguagePreset) {
         language = preset
         editor.setLexerName(preset.lexer)
+        editor.setKeywordSets(LanguageKeywords.sets(for: preset.name))
         editor.restyleAll()
     }
 
@@ -140,7 +142,7 @@ final class EditorDocument: ObservableObject, Identifiable {
         url = target
         isDirty = editor.isDirty
 
-        if moved, let preset = LanguagePreset.matching(target.pathExtension) {
+        if moved, let preset = LanguagePreset.matching(url: target) {
             setLanguage(preset)
         }
         return true

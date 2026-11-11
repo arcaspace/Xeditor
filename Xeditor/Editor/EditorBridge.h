@@ -47,6 +47,9 @@ typedef NS_OPTIONS(NSUInteger, XEditorSearchFlags) {
 
 /// Lexilla lexer name, e.g. "cpp", "python", "markdown", "null".
 - (void)setLexerName:(NSString *)name;
+/// Keyword lists for the current lexer, in SCI_SETKEYWORDS index order.
+/// Pass an empty string for unused slots.
+- (void)setKeywordSets:(NSArray<NSString *> *)sets;
 /// Re-run the current lexer over the whole document (needed when switching
 /// languages after the text has already been styled).
 - (void)restyleAll;

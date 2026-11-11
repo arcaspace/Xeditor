@@ -134,13 +134,23 @@ final class PreferencesWindowController: NSWindowController {
                 fonts.append(family)
             }
         }
-        if !fonts.contains("SF Mono") { fonts.insert("SF Mono", at: 0) }
+        // Only offer faces that CoreText can actually resolve; unavailable names
+        // fall back to Helvetica and break bold/italic styles.
+        if NSFont(name: "SF Mono", size: 13) != nil && !fonts.contains("SF Mono") {
+            fonts.insert("SF Mono", at: 0)
+        }
         return fonts.sorted()
     }
 
     private func loadSettings() {
         let settings = EditorSettings.shared
-        fontPopUp.selectItem(withTitle: settings.fontName)
+        if fontPopUp.indexOfItem(withTitle: settings.fontName) >= 0 {
+            fontPopUp.selectItem(withTitle: settings.fontName)
+        } else if fontPopUp.indexOfItem(withTitle: "Menlo") >= 0 {
+            // A previously stored face may no longer be installed (for example
+            // the old "SF Mono" default, which CoreText resolves to Helvetica).
+            fontPopUp.selectItem(withTitle: "Menlo")
+        }
         fontSizeSlider.doubleValue = Double(settings.fontSize)
         fontSizeLabel.stringValue = "\(Int(settings.fontSize)) pt"
 

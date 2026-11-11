@@ -3,6 +3,7 @@
 #import "ScintillaView.h"
 
 #include "Scintilla.h"
+#include "SciLexer.h"
 #include "ILexer.h"
 #include "Lexilla.h"
 
@@ -168,8 +169,10 @@ static NSStringEncoding detectEncoding(NSData *data) {
     [sci message:SCI_SETCARETLINEVISIBLE       wParam:1 lParam:0];
     [sci message:SCI_SETCARETLINEVISIBLEALWAYS  wParam:1 lParam:0];
 
-    // Default font
-    [sci setFontName:@"SF Mono" size:13 bold:NO italic:NO];
+    // Default font. "SF Mono" ships with Terminal/Xcode but is not installed as
+    // a regular system font, so it silently resolved to Helvetica. Menlo is
+    // always available and keeps the editor monospaced.
+    [sci setFontName:@"Menlo" size:13 bold:NO italic:NO];
 
     // Detect system appearance
     BOOL dark = NO;
@@ -270,9 +273,32 @@ static NSStringEncoding detectEncoding(NSData *data) {
     [self.sci setLexerProperty:@"fold.compact" value:@"0"];
     [self.sci setLexerProperty:@"fold.comment" value:@"1"];
     [self.sci setLexerProperty:@"fold.preprocessor" value:@"1"];
-    [self applySyntaxPaletteDark:self.darkTheme];
+    if ([resolved isEqualToString:@"cpp"]) {
+        // The cpp lexer is also the fallback for JavaScript/TypeScript and Go.
+        [self.sci setLexerProperty:@"lexer.cpp.allow.dollars" value:@"1"];
+        [self.sci setLexerProperty:@"lexer.cpp.backquoted.strings" value:@"2"];
+    }
+    if ([resolved isEqualToString:@"markdown"]) {
+        // Style the whole heading line, not just the leading '#' markers.
+        [self.sci setLexerProperty:@"lexer.markdown.header.eolfill" value:@"1"];
+    }
+    // Reapply the whole theme: SCI_STYLECLEARALL removes style colours left
+    // over from the previous lexer before the per-lexer palette is applied.
+    [self applyThemeDark:self.darkTheme];
     // No eager SCI_COLOURISE here: after a fresh load Scintilla styles the
     // visible range on paint, which keeps opening large files interactive.
+}
+
+- (void)setKeywordSets:(NSArray<NSString *> *)sets {
+    for (NSUInteger i = 0; i < sets.count; i++) {
+        NSString *words = sets[i];
+        if (words.length == 0) {
+            continue;
+        }
+        [self.sci setReferenceProperty:SCI_SETKEYWORDS
+                             parameter:(long)i
+                                 value:words.UTF8String];
+    }
 }
 
 - (void)restyleAll {
@@ -746,7 +772,14 @@ static NSStringEncoding detectEncoding(NSData *data) {
 
 - (void)setEditorFont:(NSString *)fontName size:(CGFloat)fontSize {
     ScintillaView *sci = self.sci;
-    const char *name = fontName.UTF8String;
+    // Scintilla resolves the face through CoreText.  An unavailable family name
+    // silently becomes Helvetica: proportional text whose weight/italic traits
+    // are ignored, so bold and italic styles stop working.  Validate first.
+    NSString *resolved = fontName;
+    if (resolved.length == 0 || [NSFont fontWithName:resolved size:fontSize] == nil) {
+        resolved = @"Menlo";
+    }
+    const char *name = resolved.UTF8String;
     const int sz = (int)lround(fontSize);
     for (int style = 0; style <= STYLE_MAX; style++) {
         [sci message:SCI_STYLESETFONT wParam:style lParam:(sptr_t)name];
@@ -951,33 +984,451 @@ static NSStringEncoding detectEncoding(NSData *data) {
         return [NSColor colorWithSRGBRed:r green:g blue:b alpha:1.0];
     };
 
-    NSColor *comment = dark ? rgb(0.42, 0.60, 0.34) : rgb(0.35, 0.53, 0.30);
-    NSColor *keyword = dark ? rgb(0.34, 0.61, 0.84) : rgb(0.00, 0.20, 0.80);
-    NSColor *number  = dark ? rgb(0.71, 0.81, 0.66) : rgb(0.55, 0.20, 0.60);
-    NSColor *string  = dark ? rgb(0.81, 0.57, 0.47) : rgb(0.77, 0.10, 0.09);
-    NSColor *preproc = dark ? rgb(0.78, 0.53, 0.75) : rgb(0.60, 0.22, 0.60);
-    NSColor *opColor = dark ? rgb(0.83, 0.83, 0.83) : rgb(0.20, 0.20, 0.20);
+    NSColor *comment  = dark ? rgb(0.42, 0.60, 0.34) : rgb(0.35, 0.53, 0.30);
+    NSColor *keyword  = dark ? rgb(0.34, 0.61, 0.84) : rgb(0.00, 0.20, 0.80);
+    NSColor *number   = dark ? rgb(0.71, 0.81, 0.66) : rgb(0.55, 0.20, 0.60);
+    NSColor *string   = dark ? rgb(0.81, 0.57, 0.47) : rgb(0.77, 0.10, 0.09);
+    NSColor *preproc  = dark ? rgb(0.78, 0.53, 0.75) : rgb(0.60, 0.22, 0.60);
+    NSColor *opColor  = dark ? rgb(0.83, 0.83, 0.83) : rgb(0.20, 0.20, 0.20);
+    NSColor *typeCol  = dark ? rgb(0.45, 0.80, 0.82) : rgb(0.00, 0.43, 0.48);
+    NSColor *funcCol  = dark ? rgb(0.95, 0.80, 0.50) : rgb(0.55, 0.35, 0.00);
+    NSColor *attrCol  = dark ? rgb(0.90, 0.68, 0.40) : rgb(0.55, 0.35, 0.05);
+    NSColor *varCol   = dark ? rgb(0.80, 0.72, 0.95) : rgb(0.40, 0.20, 0.60);
+    NSColor *errorCol = [NSColor systemRedColor];
+    NSColor *diffAdd  = dark ? rgb(0.45, 0.80, 0.50) : rgb(0.10, 0.55, 0.15);
+    NSColor *diffDel  = dark ? rgb(0.95, 0.50, 0.50) : rgb(0.75, 0.15, 0.10);
+    NSColor *diffChg  = dark ? rgb(0.90, 0.75, 0.40) : rgb(0.65, 0.45, 0.00);
 
     ScintillaView *sci = self.sci;
-    const int cComment = ColorRefFromNSColor(comment);
-    const int cKeyword = ColorRefFromNSColor(keyword);
-    const int cNumber  = ColorRefFromNSColor(number);
-    const int cString  = ColorRefFromNSColor(string);
-    const int cPreproc = ColorRefFromNSColor(preproc);
-    const int cOp      = ColorRefFromNSColor(opColor);
-
-    const struct { int style; int colour; } palette[] = {
-        {1, cComment},  {2, cComment},  {3, cComment},  {15, cComment},
-        {17, cComment}, {18, cComment}, {23, cComment},
-        {4, cNumber},   {8, cNumber},   {14, cNumber},
-        {5, cKeyword},  {16, cKeyword}, {19, cKeyword},
-        {6, cString},   {7, cString},   {12, cString},
-        {13, cString},  {20, cString},  {21, cString},  {22, cString},
-        {9, cPreproc},
-        {10, cOp},
+    void (^set)(int, NSColor *) = ^(int style, NSColor *colour) {
+        [sci message:SCI_STYLESETFORE wParam:style lParam:ColorRefFromNSColor(colour)];
     };
-    for (const auto &entry : palette) {
-        [sci message:SCI_STYLESETFORE wParam:entry.style lParam:entry.colour];
+    void (^bold)(int, BOOL) = ^(int style, BOOL on) {
+        [sci message:SCI_STYLESETBOLD wParam:style lParam:on ? 1 : 0];
+    };
+    void (^italic)(int, BOOL) = ^(int style, BOOL on) {
+        [sci message:SCI_STYLESETITALIC wParam:style lParam:on ? 1 : 0];
+    };
+
+    NSString *lexer = self.currentLexer ?: @"null";
+
+    if ([lexer isEqualToString:@"cpp"]) {
+        // C / C++ / Objective-C, and the fallback for Java, Go, Swift,
+        // JavaScript and TypeScript.
+        set(SCE_C_COMMENT, comment);
+        set(SCE_C_COMMENTLINE, comment);
+        set(SCE_C_COMMENTDOC, comment);
+        set(SCE_C_COMMENTLINEDOC, comment);
+        set(SCE_C_COMMENTDOCKEYWORD, comment);
+        set(SCE_C_COMMENTDOCKEYWORDERROR, errorCol);
+        set(SCE_C_NUMBER, number);
+        set(SCE_C_WORD, keyword);
+        set(SCE_C_WORD2, typeCol);
+        set(SCE_C_GLOBALCLASS, typeCol);
+        set(SCE_C_STRING, string);
+        set(SCE_C_CHARACTER, string);
+        set(SCE_C_STRINGEOL, errorCol);
+        set(SCE_C_VERBATIM, string);
+        set(SCE_C_REGEX, string);
+        set(SCE_C_STRINGRAW, string);
+        set(SCE_C_TRIPLEVERBATIM, string);
+        set(SCE_C_HASHQUOTEDSTRING, string);
+        set(SCE_C_USERLITERAL, string);
+        set(SCE_C_ESCAPESEQUENCE, string);
+        set(SCE_C_UUID, number);
+        set(SCE_C_PREPROCESSOR, preproc);
+        set(SCE_C_PREPROCESSORCOMMENT, comment);
+        set(SCE_C_PREPROCESSORCOMMENTDOC, comment);
+        set(SCE_C_OPERATOR, opColor);
+        set(SCE_C_TASKMARKER, preproc);
+
+    } else if ([lexer isEqualToString:@"python"]) {
+        set(SCE_P_COMMENTLINE, comment);
+        set(SCE_P_COMMENTBLOCK, comment);
+        set(SCE_P_NUMBER, number);
+        set(SCE_P_WORD, keyword);
+        set(SCE_P_WORD2, typeCol);
+        set(SCE_P_STRING, string);
+        set(SCE_P_CHARACTER, string);
+        set(SCE_P_TRIPLE, string);
+        set(SCE_P_TRIPLEDOUBLE, string);
+        set(SCE_P_STRINGEOL, errorCol);
+        set(SCE_P_CLASSNAME, typeCol);
+        set(SCE_P_DEFNAME, funcCol);
+        set(SCE_P_OPERATOR, opColor);
+        set(SCE_P_DECORATOR, attrCol);
+        set(SCE_P_FSTRING, string);
+        set(SCE_P_FCHARACTER, string);
+        set(SCE_P_FTRIPLE, string);
+        set(SCE_P_FTRIPLEDOUBLE, string);
+        set(SCE_P_ATTRIBUTE, attrCol);
+
+    } else if ([lexer isEqualToString:@"json"]) {
+        set(SCE_JSON_NUMBER, number);
+        set(SCE_JSON_STRING, string);
+        set(SCE_JSON_STRINGEOL, errorCol);
+        set(SCE_JSON_PROPERTYNAME, attrCol);
+        set(SCE_JSON_ESCAPESEQUENCE, string);
+        set(SCE_JSON_LINECOMMENT, comment);
+        set(SCE_JSON_BLOCKCOMMENT, comment);
+        set(SCE_JSON_OPERATOR, opColor);
+        set(SCE_JSON_URI, string);
+        set(SCE_JSON_COMPACTIRI, string);
+        set(SCE_JSON_KEYWORD, keyword);
+        set(SCE_JSON_LDKEYWORD, keyword);
+        set(SCE_JSON_ERROR, errorCol);
+
+    } else if ([lexer isEqualToString:@"xml"] || [lexer isEqualToString:@"hypertext"]) {
+        set(SCE_H_TAG, keyword);
+        set(SCE_H_TAGUNKNOWN, keyword);
+        set(SCE_H_ATTRIBUTE, attrCol);
+        set(SCE_H_ATTRIBUTEUNKNOWN, attrCol);
+        set(SCE_H_NUMBER, number);
+        set(SCE_H_DOUBLESTRING, string);
+        set(SCE_H_SINGLESTRING, string);
+        set(SCE_H_OTHER, opColor);
+        set(SCE_H_COMMENT, comment);
+        set(SCE_H_XCCOMMENT, comment);
+        set(SCE_H_ENTITY, preproc);
+        set(SCE_H_TAGEND, keyword);
+        set(SCE_H_XMLSTART, preproc);
+        set(SCE_H_XMLEND, preproc);
+        set(SCE_H_SCRIPT, keyword);
+        set(SCE_H_ASP, preproc);
+        set(SCE_H_ASPAT, preproc);
+        set(SCE_H_CDATA, string);
+        set(SCE_H_QUESTION, preproc);
+        set(SCE_H_VALUE, string);
+        set(SCE_H_SGML_DEFAULT, keyword);
+        set(SCE_H_SGML_COMMAND, keyword);
+        set(SCE_H_SGML_1ST_PARAM, attrCol);
+        set(SCE_H_SGML_DOUBLESTRING, string);
+        set(SCE_H_SGML_SIMPLESTRING, string);
+        set(SCE_H_SGML_ERROR, errorCol);
+        set(SCE_H_SGML_SPECIAL, preproc);
+        set(SCE_H_SGML_ENTITY, preproc);
+        set(SCE_H_SGML_COMMENT, comment);
+        set(SCE_H_SGML_1ST_PARAM_COMMENT, comment);
+        set(SCE_H_SGML_BLOCK_DEFAULT, keyword);
+
+        // Embedded JavaScript.
+        set(SCE_HJ_COMMENT, comment);
+        set(SCE_HJ_COMMENTLINE, comment);
+        set(SCE_HJ_COMMENTDOC, comment);
+        set(SCE_HJ_NUMBER, number);
+        set(SCE_HJ_WORD, keyword);
+        set(SCE_HJ_KEYWORD, keyword);
+        set(SCE_HJ_DOUBLESTRING, string);
+        set(SCE_HJ_SINGLESTRING, string);
+        set(SCE_HJ_SYMBOLS, opColor);
+        set(SCE_HJ_STRINGEOL, errorCol);
+        set(SCE_HJ_REGEX, string);
+        set(SCE_HJ_TEMPLATELITERAL, string);
+        set(SCE_HJA_COMMENT, comment);
+        set(SCE_HJA_COMMENTLINE, comment);
+        set(SCE_HJA_COMMENTDOC, comment);
+        set(SCE_HJA_NUMBER, number);
+        set(SCE_HJA_WORD, keyword);
+        set(SCE_HJA_KEYWORD, keyword);
+        set(SCE_HJA_DOUBLESTRING, string);
+        set(SCE_HJA_SINGLESTRING, string);
+        set(SCE_HJA_SYMBOLS, opColor);
+        set(SCE_HJA_STRINGEOL, errorCol);
+        set(SCE_HJA_REGEX, string);
+        set(SCE_HJA_TEMPLATELITERAL, string);
+
+        // Embedded PHP.
+        set(SCE_HPHP_HSTRING, string);
+        set(SCE_HPHP_SIMPLESTRING, string);
+        set(SCE_HPHP_WORD, keyword);
+        set(SCE_HPHP_NUMBER, number);
+        set(SCE_HPHP_VARIABLE, varCol);
+        set(SCE_HPHP_COMMENT, comment);
+        set(SCE_HPHP_COMMENTLINE, comment);
+        set(SCE_HPHP_HSTRING_VARIABLE, varCol);
+        set(SCE_HPHP_OPERATOR, opColor);
+        set(SCE_HP_COMMENTLINE, comment);
+        set(SCE_HP_NUMBER, number);
+        set(SCE_HP_STRING, string);
+        set(SCE_HP_CHARACTER, string);
+        set(SCE_HP_WORD, keyword);
+        set(SCE_HP_TRIPLE, string);
+        set(SCE_HP_TRIPLEDOUBLE, string);
+        set(SCE_HP_CLASSNAME, typeCol);
+        set(SCE_HP_DEFNAME, funcCol);
+        set(SCE_HP_OPERATOR, opColor);
+        set(SCE_HP_IDENTIFIER, opColor);
+
+    } else if ([lexer isEqualToString:@"css"]) {
+        set(SCE_CSS_TAG, keyword);
+        set(SCE_CSS_CLASS, typeCol);
+        set(SCE_CSS_ID, typeCol);
+        set(SCE_CSS_PSEUDOCLASS, keyword);
+        set(SCE_CSS_PSEUDOELEMENT, keyword);
+        set(SCE_CSS_EXTENDED_PSEUDOCLASS, keyword);
+        set(SCE_CSS_EXTENDED_PSEUDOELEMENT, keyword);
+        set(SCE_CSS_UNKNOWN_PSEUDOCLASS, opColor);
+        set(SCE_CSS_OPERATOR, opColor);
+        set(SCE_CSS_IDENTIFIER, keyword);
+        set(SCE_CSS_IDENTIFIER2, keyword);
+        set(SCE_CSS_IDENTIFIER3, keyword);
+        set(SCE_CSS_EXTENDED_IDENTIFIER, keyword);
+        set(SCE_CSS_UNKNOWN_IDENTIFIER, opColor);
+        set(SCE_CSS_VALUE, number);
+        set(SCE_CSS_COMMENT, comment);
+        set(SCE_CSS_IMPORTANT, preproc);
+        set(SCE_CSS_DIRECTIVE, preproc);
+        set(SCE_CSS_DOUBLESTRING, string);
+        set(SCE_CSS_SINGLESTRING, string);
+        set(SCE_CSS_ATTRIBUTE, attrCol);
+        set(SCE_CSS_GROUP_RULE, keyword);
+        set(SCE_CSS_VARIABLE, varCol);
+
+    } else if ([lexer isEqualToString:@"markdown"]) {
+        set(SCE_MARKDOWN_HEADER1, keyword); bold(SCE_MARKDOWN_HEADER1, YES);
+        set(SCE_MARKDOWN_HEADER2, keyword); bold(SCE_MARKDOWN_HEADER2, YES);
+        set(SCE_MARKDOWN_HEADER3, keyword); bold(SCE_MARKDOWN_HEADER3, YES);
+        set(SCE_MARKDOWN_HEADER4, keyword); bold(SCE_MARKDOWN_HEADER4, YES);
+        set(SCE_MARKDOWN_HEADER5, keyword); bold(SCE_MARKDOWN_HEADER5, YES);
+        set(SCE_MARKDOWN_HEADER6, keyword); bold(SCE_MARKDOWN_HEADER6, YES);
+        set(SCE_MARKDOWN_STRONG1, opColor); bold(SCE_MARKDOWN_STRONG1, YES);
+        set(SCE_MARKDOWN_STRONG2, opColor); bold(SCE_MARKDOWN_STRONG2, YES);
+        set(SCE_MARKDOWN_EM1, opColor); italic(SCE_MARKDOWN_EM1, YES);
+        set(SCE_MARKDOWN_EM2, opColor); italic(SCE_MARKDOWN_EM2, YES);
+        set(SCE_MARKDOWN_STRIKEOUT, comment);
+        set(SCE_MARKDOWN_PRECHAR, comment);
+        set(SCE_MARKDOWN_ULIST_ITEM, keyword);
+        set(SCE_MARKDOWN_OLIST_ITEM, keyword);
+        set(SCE_MARKDOWN_BLOCKQUOTE, comment);
+        set(SCE_MARKDOWN_HRULE, comment);
+        set(SCE_MARKDOWN_LINK, typeCol);
+        set(SCE_MARKDOWN_CODE, string);
+        set(SCE_MARKDOWN_CODE2, string);
+        set(SCE_MARKDOWN_CODEBK, string);
+        set(SCE_MARKDOWN_FRONT_MARK, comment);
+        set(SCE_MARKDOWN_FRONT, comment);
+        set(SCE_MARKDOWN_FRONT_KEY, attrCol);
+
+    } else if ([lexer isEqualToString:@"bash"]) {
+        set(SCE_SH_ERROR, errorCol);
+        set(SCE_SH_COMMENTLINE, comment);
+        set(SCE_SH_NUMBER, number);
+        set(SCE_SH_WORD, keyword);
+        set(SCE_SH_STRING, string);
+        set(SCE_SH_CHARACTER, string);
+        set(SCE_SH_OPERATOR, opColor);
+        set(SCE_SH_SCALAR, varCol);
+        set(SCE_SH_PARAM, varCol);
+        set(SCE_SH_BACKTICKS, string);
+        set(SCE_SH_HERE_DELIM, string);
+        set(SCE_SH_HERE_Q, string);
+
+    } else if ([lexer isEqualToString:@"sql"]) {
+        set(SCE_SQL_COMMENT, comment);
+        set(SCE_SQL_COMMENTLINE, comment);
+        set(SCE_SQL_COMMENTDOC, comment);
+        set(SCE_SQL_NUMBER, number);
+        set(SCE_SQL_WORD, keyword);
+        set(SCE_SQL_WORD2, typeCol);
+        set(SCE_SQL_STRING, string);
+        set(SCE_SQL_CHARACTER, string);
+        set(SCE_SQL_SQLPLUS, preproc);
+        set(SCE_SQL_SQLPLUS_PROMPT, preproc);
+        set(SCE_SQL_SQLPLUS_COMMENT, comment);
+        set(SCE_SQL_OPERATOR, opColor);
+        set(SCE_SQL_COMMENTLINEDOC, comment);
+        set(SCE_SQL_COMMENTDOCKEYWORD, comment);
+        set(SCE_SQL_COMMENTDOCKEYWORDERROR, errorCol);
+        set(SCE_SQL_USER1, typeCol);
+        set(SCE_SQL_USER2, typeCol);
+        set(SCE_SQL_USER3, typeCol);
+        set(SCE_SQL_USER4, typeCol);
+        set(SCE_SQL_QUOTEDIDENTIFIER, attrCol);
+        set(SCE_SQL_QOPERATOR, opColor);
+
+    } else if ([lexer isEqualToString:@"yaml"]) {
+        set(SCE_YAML_COMMENT, comment);
+        set(SCE_YAML_IDENTIFIER, attrCol);
+        set(SCE_YAML_KEYWORD, keyword);
+        set(SCE_YAML_NUMBER, number);
+        set(SCE_YAML_REFERENCE, typeCol);
+        set(SCE_YAML_DOCUMENT, preproc);
+        set(SCE_YAML_TEXT, string);
+        set(SCE_YAML_ERROR, errorCol);
+        set(SCE_YAML_OPERATOR, opColor);
+
+    } else if ([lexer isEqualToString:@"rust"]) {
+        set(SCE_RUST_COMMENTBLOCK, comment);
+        set(SCE_RUST_COMMENTLINE, comment);
+        set(SCE_RUST_COMMENTBLOCKDOC, comment);
+        set(SCE_RUST_COMMENTLINEDOC, comment);
+        set(SCE_RUST_NUMBER, number);
+        set(SCE_RUST_WORD, keyword);
+        set(SCE_RUST_WORD2, typeCol);
+        set(SCE_RUST_WORD3, keyword);
+        set(SCE_RUST_WORD4, keyword);
+        set(SCE_RUST_WORD5, keyword);
+        set(SCE_RUST_WORD6, keyword);
+        set(SCE_RUST_WORD7, keyword);
+        set(SCE_RUST_STRING, string);
+        set(SCE_RUST_STRINGR, string);
+        set(SCE_RUST_CHARACTER, string);
+        set(SCE_RUST_OPERATOR, opColor);
+        set(SCE_RUST_IDENTIFIER, opColor);
+        set(SCE_RUST_LIFETIME, typeCol);
+        set(SCE_RUST_MACRO, funcCol);
+        set(SCE_RUST_LEXERROR, errorCol);
+        set(SCE_RUST_BYTESTRING, string);
+        set(SCE_RUST_BYTESTRINGR, string);
+        set(SCE_RUST_BYTECHARACTER, string);
+        set(SCE_RUST_CSTRING, string);
+        set(SCE_RUST_CSTRINGR, string);
+
+    } else if ([lexer isEqualToString:@"makefile"]) {
+        set(SCE_MAKE_COMMENT, comment);
+        set(SCE_MAKE_PREPROCESSOR, preproc);
+        set(SCE_MAKE_IDENTIFIER, varCol);
+        set(SCE_MAKE_OPERATOR, opColor);
+        set(SCE_MAKE_TARGET, funcCol);
+
+    } else if ([lexer isEqualToString:@"diff"]) {
+        set(SCE_DIFF_COMMENT, comment);
+        set(SCE_DIFF_COMMAND, preproc);
+        set(SCE_DIFF_HEADER, keyword);
+        set(SCE_DIFF_POSITION, typeCol);
+        set(SCE_DIFF_DELETED, diffDel);
+        set(SCE_DIFF_ADDED, diffAdd);
+        set(SCE_DIFF_CHANGED, diffChg);
+        set(SCE_DIFF_PATCH_ADD, diffAdd);
+        set(SCE_DIFF_PATCH_DELETE, diffDel);
+        set(SCE_DIFF_REMOVED_PATCH_ADD, diffChg);
+        set(SCE_DIFF_REMOVED_PATCH_DELETE, diffChg);
+
+    } else if ([lexer isEqualToString:@"lua"]) {
+        set(SCE_LUA_COMMENT, comment);
+        set(SCE_LUA_COMMENTLINE, comment);
+        set(SCE_LUA_COMMENTDOC, comment);
+        set(SCE_LUA_NUMBER, number);
+        set(SCE_LUA_WORD, keyword);
+        set(SCE_LUA_WORD2, funcCol);
+        set(SCE_LUA_WORD3, funcCol);
+        set(SCE_LUA_WORD4, funcCol);
+        set(SCE_LUA_WORD5, keyword);
+        set(SCE_LUA_WORD6, keyword);
+        set(SCE_LUA_WORD7, keyword);
+        set(SCE_LUA_WORD8, keyword);
+        set(SCE_LUA_STRING, string);
+        set(SCE_LUA_CHARACTER, string);
+        set(SCE_LUA_LITERALSTRING, string);
+        set(SCE_LUA_STRINGEOL, errorCol);
+        set(SCE_LUA_PREPROCESSOR, preproc);
+        set(SCE_LUA_OPERATOR, opColor);
+        set(SCE_LUA_LABEL, typeCol);
+
+    } else if ([lexer isEqualToString:@"ruby"]) {
+        set(SCE_RB_ERROR, errorCol);
+        set(SCE_RB_COMMENTLINE, comment);
+        set(SCE_RB_POD, comment);
+        set(SCE_RB_NUMBER, number);
+        set(SCE_RB_WORD, keyword);
+        set(SCE_RB_WORD_DEMOTED, keyword);
+        set(SCE_RB_STDIN, keyword);
+        set(SCE_RB_STDOUT, keyword);
+        set(SCE_RB_STDERR, keyword);
+        set(SCE_RB_CLASSNAME, typeCol);
+        set(SCE_RB_MODULE_NAME, typeCol);
+        set(SCE_RB_DEFNAME, funcCol);
+        set(SCE_RB_OPERATOR, opColor);
+        set(SCE_RB_STRING, string);
+        set(SCE_RB_CHARACTER, string);
+        set(SCE_RB_REGEX, string);
+        set(SCE_RB_BACKTICKS, string);
+        set(SCE_RB_DATASECTION, string);
+        set(SCE_RB_HERE_DELIM, string);
+        set(SCE_RB_HERE_Q, string);
+        set(SCE_RB_HERE_QQ, string);
+        set(SCE_RB_HERE_QX, string);
+        set(SCE_RB_STRING_W, string);
+        set(SCE_RB_STRING_I, string);
+        set(SCE_RB_STRING_QI, string);
+        set(SCE_RB_STRING_QS, string);
+        set(SCE_RB_GLOBAL, varCol);
+        set(SCE_RB_INSTANCE_VAR, varCol);
+        set(SCE_RB_CLASS_VAR, varCol);
+        set(SCE_RB_SYMBOL, attrCol);
+
+    } else if ([lexer isEqualToString:@"perl"]) {
+        set(SCE_PL_ERROR, errorCol);
+        set(SCE_PL_COMMENTLINE, comment);
+        set(SCE_PL_POD, comment);
+        set(SCE_PL_POD_VERB, comment);
+        set(SCE_PL_NUMBER, number);
+        set(SCE_PL_WORD, keyword);
+        set(SCE_PL_STRING, string);
+        set(SCE_PL_CHARACTER, string);
+        set(SCE_PL_PUNCTUATION, opColor);
+        set(SCE_PL_PREPROCESSOR, preproc);
+        set(SCE_PL_OPERATOR, opColor);
+        set(SCE_PL_SCALAR, varCol);
+        set(SCE_PL_ARRAY, varCol);
+        set(SCE_PL_HASH, varCol);
+        set(SCE_PL_SYMBOLTABLE, varCol);
+        set(SCE_PL_VARIABLE_INDEXER, varCol);
+        set(SCE_PL_REGEX, string);
+        set(SCE_PL_REGSUBST, string);
+        set(SCE_PL_LONGQUOTE, string);
+        set(SCE_PL_BACKTICKS, string);
+        set(SCE_PL_DATASECTION, string);
+        set(SCE_PL_HERE_DELIM, string);
+        set(SCE_PL_HERE_Q, string);
+        set(SCE_PL_HERE_QQ, string);
+        set(SCE_PL_HERE_QX, string);
+        set(SCE_PL_STRING_Q, string);
+        set(SCE_PL_STRING_QQ, string);
+        set(SCE_PL_STRING_QX, string);
+        set(SCE_PL_STRING_QR, string);
+        set(SCE_PL_STRING_QW, string);
+        set(SCE_PL_SUB_PROTOTYPE, typeCol);
+        set(SCE_PL_FORMAT_IDENT, typeCol);
+        set(SCE_PL_FORMAT, string);
+        set(SCE_PL_STRING_VAR, varCol);
+        set(SCE_PL_XLAT, opColor);
+
+    } else if ([lexer isEqualToString:@"cmake"]) {
+        set(SCE_CMAKE_COMMENT, comment);
+        set(SCE_CMAKE_STRINGDQ, string);
+        set(SCE_CMAKE_STRINGLQ, string);
+        set(SCE_CMAKE_STRINGRQ, string);
+        set(SCE_CMAKE_STRINGVAR, string);
+        set(SCE_CMAKE_COMMANDS, keyword);
+        set(SCE_CMAKE_PARAMETERS, attrCol);
+        set(SCE_CMAKE_VARIABLE, varCol);
+        set(SCE_CMAKE_USERDEFINED, typeCol);
+        set(SCE_CMAKE_WHILEDEF, keyword);
+        set(SCE_CMAKE_FOREACHDEF, keyword);
+        set(SCE_CMAKE_IFDEFINEDEF, keyword);
+        set(SCE_CMAKE_MACRODEF, keyword);
+        set(SCE_CMAKE_NUMBER, number);
+
+    } else if ([lexer isEqualToString:@"conf"]) {
+        set(SCE_CONF_COMMENT, comment);
+        set(SCE_CONF_NUMBER, number);
+        set(SCE_CONF_IDENTIFIER, attrCol);
+        set(SCE_CONF_EXTENSION, typeCol);
+        set(SCE_CONF_PARAMETER, attrCol);
+        set(SCE_CONF_STRING, string);
+        set(SCE_CONF_OPERATOR, opColor);
+        set(SCE_CONF_IP, number);
+        set(SCE_CONF_DIRECTIVE, keyword);
+
+    } else if ([lexer isEqualToString:@"batch"]) {
+        set(SCE_BAT_COMMENT, comment);
+        set(SCE_BAT_WORD, keyword);
+        set(SCE_BAT_LABEL, funcCol);
+        set(SCE_BAT_HIDE, comment);
+        set(SCE_BAT_COMMAND, keyword);
+        set(SCE_BAT_IDENTIFIER, varCol);
+        set(SCE_BAT_OPERATOR, opColor);
     }
 }
 

@@ -80,4 +80,21 @@ struct LanguagePreset: Hashable {
         let ext = pathExtension.lowercased()
         return all.first { $0.extensions.contains(ext) }
     }
+
+    /// Detects a language from a full URL, covering files whose name carries the
+    /// language rather than a usable extension (Makefile, CMakeLists.txt).
+    static func matching(url: URL) -> LanguagePreset? {
+        let fileName = url.lastPathComponent.lowercased()
+        switch fileName {
+        case "makefile", "gnumakefile", "bsdmakefile", "makefile.am":
+            return all.first { $0.name == "makefile" }
+        case "cmakelists.txt":
+            return all.first { $0.name == "cmake" }
+        default:
+            if fileName.hasSuffix(".cmake.in") {
+                return all.first { $0.name == "cmake" }
+            }
+            return matching(url.pathExtension)
+        }
+    }
 }

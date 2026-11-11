@@ -7,7 +7,7 @@ final class EditorSettings {
     private let defaults = UserDefaults.standard
 
     var fontName: String {
-        get { defaults.string(forKey: "editor.fontName") ?? "SF Mono" }
+        get { defaults.string(forKey: "editor.fontName") ?? "Menlo" }
         set { defaults.set(newValue, forKey: "editor.fontName") }
     }
 
