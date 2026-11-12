@@ -7,6 +7,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, PreferencesDelegate, G
     private var preferencesController: PreferencesWindowController?
     private var goToLineController: GoToLineWindowController?
     private var findController: FindWindowController?
+    private var compareToolController: CompareToolWindowController?
+    private var hashToolController: HashToolWindowController?
+    private var codecToolController: CodecToolWindowController?
     private var appearanceObservation: NSKeyValueObservation?
 
     private static let sessionFilesKey = "session.files"
@@ -263,6 +266,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate, PreferencesDelegate, G
         preferencesController?.showWindow(nil)
     }
 
+    // MARK: - Tools
+
+    @objc func showCompareTool(_ sender: Any?) {
+        if compareToolController == nil {
+            compareToolController = CompareToolWindowController(store: store)
+        }
+        compareToolController?.present()
+    }
+
+    @objc func showHashTool(_ sender: Any?) {
+        if hashToolController == nil {
+            hashToolController = HashToolWindowController(store: store)
+        }
+        hashToolController?.present()
+    }
+
+    @objc func showCodecTool(_ sender: Any?) {
+        if codecToolController == nil {
+            codecToolController = CodecToolWindowController(store: store)
+        }
+        codecToolController?.present()
+    }
+
     // MARK: - Edit & Formatting Actions
 
     @objc func duplicateLine(_ sender: Any?) { store.activeDocument?.duplicateLine(); windowController?.mainVC.updateActiveDocumentContent() }
@@ -481,7 +507,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, PreferencesDelegate, G
         viewMenuItem.submenu = viewMenu
         mainMenu.addItem(viewMenuItem)
 
-        // 6. Window Menu
+        // 6. Tools Menu
+        let toolsMenuItem = NSMenuItem()
+        let toolsMenu = NSMenu(title: "Tools")
+        let compareItem = NSMenuItem(title: "Compare Files…", action: #selector(showCompareTool(_:)), keyEquivalent: "D")
+        toolsMenu.addItem(compareItem)
+        toolsMenu.addItem(NSMenuItem.separator())
+        toolsMenu.addItem(withTitle: "MD5 / SHA…", action: #selector(showHashTool(_:)), keyEquivalent: "")
+        toolsMenu.addItem(withTitle: "Base64 / URL…", action: #selector(showCodecTool(_:)), keyEquivalent: "")
+        toolsMenuItem.submenu = toolsMenu
+        mainMenu.addItem(toolsMenuItem)
+
+        // 7. Window Menu
         let windowMenuItem = NSMenuItem()
         let windowMenu = NSMenu(title: "Window")
         windowMenu.addItem(withTitle: "Minimize", action: #selector(NSWindow.miniaturize(_:)), keyEquivalent: "m")
