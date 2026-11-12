@@ -308,6 +308,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, PreferencesDelegate, G
         applyGlobalSettings()
     }
 
+    @objc func toggleShowWhitespace(_ sender: Any?) {
+        EditorSettings.shared.showWhitespace.toggle()
+        applyGlobalSettings()
+    }
+
+    @objc func toggleIndentGuides(_ sender: Any?) {
+        EditorSettings.shared.showIndentGuides.toggle()
+        applyGlobalSettings()
+    }
+
     // MARK: - Menu Construction
 
     private func buildMainMenu() {
@@ -465,6 +475,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, PreferencesDelegate, G
         viewMenu.addItem(withTitle: "Default Font Size", action: #selector(resetFontSize(_:)), keyEquivalent: "0")
         viewMenu.addItem(NSMenuItem.separator())
         viewMenu.addItem(withTitle: "Toggle Word Wrap", action: #selector(toggleWordWrap(_:)), keyEquivalent: "")
+        viewMenu.addItem(withTitle: "Show Whitespace", action: #selector(toggleShowWhitespace(_:)), keyEquivalent: "")
+        viewMenu.addItem(withTitle: "Show Indent Guides", action: #selector(toggleIndentGuides(_:)), keyEquivalent: "")
 
         viewMenuItem.submenu = viewMenu
         mainMenu.addItem(viewMenuItem)
@@ -485,5 +497,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate, PreferencesDelegate, G
         mainMenu.addItem(windowMenuItem)
 
         NSApp.mainMenu = mainMenu
+    }
+}
+
+extension AppDelegate: NSMenuItemValidation {
+    func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
+        let settings = EditorSettings.shared
+        switch menuItem.action {
+        case #selector(toggleWordWrap(_:)):
+            menuItem.state = settings.wordWrap ? .on : .off
+        case #selector(toggleShowWhitespace(_:)):
+            menuItem.state = settings.showWhitespace ? .on : .off
+        case #selector(toggleIndentGuides(_:)):
+            menuItem.state = settings.showIndentGuides ? .on : .off
+        default:
+            break
+        }
+        return true
     }
 }

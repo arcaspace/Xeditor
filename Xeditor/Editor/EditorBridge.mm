@@ -1195,7 +1195,11 @@ static NSStringEncoding detectEncoding(NSData *data) {
 }
 
 - (void)setShowWhitespace:(BOOL)show {
+    // Make space dots large enough to read at typical editor font sizes.
+    [self.sci message:SCI_SETWHITESPACESIZE wParam:3 lParam:0];
     [self.sci message:SCI_SETVIEWWS wParam:(show ? SCWS_VISIBLEALWAYS : SCWS_INVISIBLE) lParam:0];
+    // Also show line ends so LF and CRLF are distinguishable.
+    [self.sci message:SCI_SETVIEWEOL wParam:(show ? 1 : 0) lParam:0];
 }
 
 - (void)setShowIndentGuides:(BOOL)show {
@@ -1464,7 +1468,17 @@ static NSStringEncoding detectEncoding(NSData *data) {
     [sci message:SCI_STYLESETBACK      wParam:STYLE_LINENUMBER lParam:bg];
     [sci message:SCI_SETSELBACK        wParam:TRUE lParam:sel];
     [sci message:SCI_SETSELFORE        wParam:TRUE lParam:fg];
-    [sci message:SCI_SETWHITESPACEFORE wParam:TRUE lParam:dRef];
+    // Whitespace markers in a bright accent colour so spaces, tabs and line
+    // ends stand out from the text.
+    // Whitespace markers use a muted frost accent (Nord-style): quiet enough
+    // to sit behind code, cool enough to read as a designed accent rather than
+    // leftover UI chrome.
+    NSColor *whiteSpaceColor = dark
+        ? [NSColor colorWithSRGBRed:0.533 green:0.753 blue:0.816 alpha:1.0] // #88C0D0
+        : [NSColor colorWithSRGBRed:0.369 green:0.506 blue:0.675 alpha:1.0]; // #5E81AC
+    [sci message:SCI_SETWHITESPACEFORE wParam:TRUE
+                                 lParam:ColorRefFromNSColor(whiteSpaceColor)];
+    [sci message:SCI_STYLESETFORE      wParam:STYLE_INDENTGUIDE lParam:dRef];
 
     // Caret line highlight
     [sci message:SCI_SETCARETLINEBACK  wParam:clBg lParam:0];
