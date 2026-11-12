@@ -10,6 +10,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, PreferencesDelegate, G
     private var compareToolController: CompareToolWindowController?
     private var hashToolController: HashToolWindowController?
     private var codecToolController: CodecToolWindowController?
+    private var structuredToolController: StructuredToolWindowController?
+    private var conversionToolController: ConversionToolWindowController?
     private var appearanceObservation: NSKeyValueObservation?
 
     private static let sessionFilesKey = "session.files"
@@ -311,6 +313,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate, PreferencesDelegate, G
         codecToolController?.present()
     }
 
+    @objc func showStructuredTool(_ sender: Any?) {
+        if structuredToolController == nil {
+            let controller = StructuredToolWindowController(store: store)
+            controller.onEditorChanged = { [weak self] in
+                self?.windowController?.mainVC.updateActiveDocumentContent()
+            }
+            structuredToolController = controller
+        }
+        structuredToolController?.present()
+    }
+
+    @objc func showConversionTool(_ sender: Any?) {
+        if conversionToolController == nil {
+            let controller = ConversionToolWindowController(store: store)
+            controller.onEditorChanged = { [weak self] in
+                self?.windowController?.mainVC.updateActiveDocumentContent()
+            }
+            conversionToolController = controller
+        }
+        conversionToolController?.present()
+    }
+
     // MARK: - Edit & Formatting Actions
 
     @objc func duplicateLine(_ sender: Any?) { store.activeDocument?.duplicateLine(); windowController?.mainVC.updateActiveDocumentContent() }
@@ -535,6 +559,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, PreferencesDelegate, G
         toolsMenu.addItem(NSMenuItem.separator())
         toolsMenu.addItem(withTitle: "MD5 / SHA…", action: #selector(showHashTool(_:)), keyEquivalent: "")
         toolsMenu.addItem(withTitle: "Base64 / URL…", action: #selector(showCodecTool(_:)), keyEquivalent: "")
+        toolsMenu.addItem(withTitle: "Structured Data…", action: #selector(showStructuredTool(_:)), keyEquivalent: "")
+        toolsMenu.addItem(withTitle: "JSON ⇄ YAML…", action: #selector(showConversionTool(_:)), keyEquivalent: "")
         toolsMenuItem.submenu = toolsMenu
         mainMenu.addItem(toolsMenuItem)
 

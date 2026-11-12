@@ -116,6 +116,16 @@ final class EditorDocument: ObservableObject, Identifiable {
         cursorColumn = Int(editor.currentColumn())
     }
 
+    /// Re-reads the metrics that the status bar shows. `contentChangeHandler`
+    /// delivers them asynchronously, so callers that immediately refresh the
+    /// UI after an edit need this synchronous refresh to avoid stale values.
+    func refreshMetrics() {
+        lineCount = Int(editor.lineCount())
+        cursorLine = Int(editor.currentLine())
+        cursorColumn = Int(editor.currentColumn())
+        isDirty = editor.isDirty
+    }
+
     func setLanguage(_ preset: LanguagePreset) {
         language = preset
         editor.setLexerName(preset.lexer)

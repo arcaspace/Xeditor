@@ -153,6 +153,7 @@ final class MainViewController: NSViewController, NativeTabBarDelegate, FindHost
 
     func updateActiveDocumentContent() {
         guard let active = store.activeDocument else { return }
+        active.refreshMetrics()
         tabBar.updateDocument(id: active.id)
         statusBar.update(document: active)
         view.window?.title = active.displayName

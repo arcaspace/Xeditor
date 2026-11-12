@@ -38,6 +38,8 @@ private final class RegexHelpView: NSView {
         let characters = Self.section("Characters", [
             (".", "Any character"),
             ("\\R", "Line break"),
+            ("\\n", "Line feed"),
+            ("\\r", "Carriage return"),
             ("\\t", "Tab"),
             ("\\w", "Word character"),
             ("\\s", "Whitespace"),

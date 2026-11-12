@@ -168,6 +168,7 @@ static NSStringEncoding detectEncoding(NSData *data) {
 @property (nonatomic, copy, nullable) NSString *filePath;
 @property (nonatomic, readwrite) NSStringEncoding fileEncoding;
 - (void)updateDirtyState;
+- (BOOL)patternNeedsMultilineEngine:(NSData *)needle;
 @end
 
 @implementation EditorBridge
@@ -406,12 +407,61 @@ static NSStringEncoding detectEncoding(NSData *data) {
 #pragma mark - Find & Replace
 // ---------------------------------------------------------------------------
 
-- (int)sciFlagsFrom:(XEditorSearchFlags)flags {
+- (int)sciFlagsFrom:(XEditorSearchFlags)flags needle:(NSData *)needle {
     int sf = 0;
     if (flags & XEditorSearchCaseSensitive) sf |= SCFIND_MATCHCASE;
-    if (flags & XEditorSearchRegex)         sf |= SCFIND_REGEXP | SCFIND_CXX11REGEX;
+    if (flags & XEditorSearchRegex) {
+        sf |= SCFIND_REGEXP;
+        // The C++11 engine searches line by line, so a pattern containing an
+        // explicit line-break escape can never match. Use Scintilla's built-in
+        // engine for those: it scans the whole target and understands \n / \r.
+        if (![self patternNeedsMultilineEngine:needle]) {
+            sf |= SCFIND_CXX11REGEX;
+        }
+    }
     if (flags & XEditorSearchWholeWord)     sf |= SCFIND_WHOLEWORD;
     return sf;
+}
+
+- (BOOL)patternNeedsMultilineEngine:(NSData *)needle {
+    const unsigned char *bytes = (const unsigned char *)needle.bytes;
+    const NSUInteger length = needle.length;
+    for (NSUInteger i = 0; i < length; i++) {
+        const unsigned char c = bytes[i];
+        if (c == '\n' || c == '\r') return YES;
+        if (c != '\\') continue;
+        if (i + 1 >= length) break;
+        const unsigned char next = bytes[++i];
+        if (next == 'n' || next == 'r' || next == 'R') return YES;
+    }
+    return NO;
+}
+
+/// Scintilla's built-in engine has no `\R`, so expand it to `\r?\n` before
+/// searching: that matches the line ending of LF and CRLF documents alike.
+/// A doubly escaped `\\R` stays a literal backslash followed by "R".
+- (NSData *)regexPatternFrom:(NSData *)needle flags:(XEditorSearchFlags)flags {
+    if (!(flags & XEditorSearchRegex) || needle.length < 2) return needle;
+    const unsigned char *bytes = (const unsigned char *)needle.bytes;
+    NSMutableData *expanded = nil;
+    for (NSUInteger i = 0; i < needle.length; i++) {
+        if (bytes[i] != '\\' || i + 1 >= needle.length) {
+            if (expanded) [expanded appendBytes:&bytes[i] length:1];
+            continue;
+        }
+        const unsigned char next = bytes[i + 1];
+        if (next == 'R') {
+            if (!expanded) {
+                expanded = [NSMutableData dataWithBytes:bytes length:i];
+            }
+            [expanded appendBytes:"\r?\n" length:3];
+            i++;
+            continue;
+        }
+        if (expanded) [expanded appendBytes:&bytes[i] length:2];
+        i++;
+    }
+    return expanded ?: needle;
 }
 
 /// Runs one search in an explicit target range. Scintilla expects
@@ -448,9 +498,34 @@ static NSStringEncoding detectEncoding(NSData *data) {
     ScintillaView *sci = self.sci;
     const sptr_t docLen = [sci message:SCI_GETLENGTH wParam:0 lParam:0];
     const sptr_t start = [self clampPosition:startPosition docLength:docLen];
-    const int sf = [self sciFlagsFrom:flags];
+    NSData *pattern = [self regexPatternFrom:needle flags:flags];
+    const int sf = [self sciFlagsFrom:flags needle:pattern];
 
-    sptr_t pos = [self searchNeedle:needle sciFlags:sf start:start end:(forward ? docLen : 0)];
+    // Patterns that span lines cannot use the reverse target search, which
+    // walks line by line. List the matches forward and take the last one
+    // before the current position.
+    if (!forward && (flags & XEditorSearchRegex) && [self patternNeedsMultilineEngine:pattern]) {
+        XEditorFindAllResult *all = [self findAllBytes:pattern flags:flags inStart:0 inEnd:-1 maxCount:0];
+        if (all.status == XEditorFindStatusInvalidRegex) {
+            return [[XEditorFindResult alloc] initWithStatus:XEditorFindStatusInvalidRegex wrapped:NO match:nil];
+        }
+        XEditorFindMatch *picked = nil;
+        for (XEditorFindMatch *match in all.matches) {
+            if (match.end <= start) picked = match;
+            else break;
+        }
+        BOOL wrapped = NO;
+        if (!picked && wrap && all.matches.count > 0) {
+            picked = all.matches.lastObject;
+            wrapped = YES;
+        }
+        if (!picked) {
+            return [[XEditorFindResult alloc] initWithStatus:XEditorFindStatusNotFound wrapped:NO match:nil];
+        }
+        return [[XEditorFindResult alloc] initWithStatus:XEditorFindStatusOk wrapped:wrapped match:picked];
+    }
+
+    sptr_t pos = [self searchNeedle:pattern sciFlags:sf start:start end:(forward ? docLen : 0)];
     BOOL wrapped = NO;
 
     if (pos < 0 && [self lastSearchHitInvalidRegex]) {
@@ -461,9 +536,9 @@ static NSStringEncoding detectEncoding(NSData *data) {
         // Continue from the opposite end, stopping at the original position so
         // a single match is never re-selected (the old code looped here).
         if (forward) {
-            pos = [self searchNeedle:needle sciFlags:sf start:0 end:start];
+            pos = [self searchNeedle:pattern sciFlags:sf start:0 end:start];
         } else {
-            pos = [self searchNeedle:needle sciFlags:sf start:docLen end:start];
+            pos = [self searchNeedle:pattern sciFlags:sf start:docLen end:start];
         }
         wrapped = YES;
     }
@@ -491,6 +566,7 @@ static NSStringEncoding detectEncoding(NSData *data) {
     if (needle.length == 0) {
         return [[XEditorFindAllResult alloc] initWithStatus:XEditorFindStatusOk matches:@[] truncated:NO];
     }
+    needle = [self regexPatternFrom:needle flags:flags];
     ScintillaView *sci = self.sci;
     const sptr_t docLen = [sci message:SCI_GETLENGTH wParam:0 lParam:0];
     sptr_t rangeStart = [self clampPosition:start docLength:docLen];
@@ -499,7 +575,7 @@ static NSStringEncoding detectEncoding(NSData *data) {
         return [[XEditorFindAllResult alloc] initWithStatus:XEditorFindStatusBadRange matches:@[] truncated:NO];
     }
 
-    const int sf = [self sciFlagsFrom:flags];
+    const int sf = [self sciFlagsFrom:flags needle:needle];
     NSMutableArray<XEditorFindMatch *> *matches = [NSMutableArray array];
     BOOL truncated = NO;
     sptr_t pos = rangeStart;
@@ -576,8 +652,9 @@ static NSStringEncoding detectEncoding(NSData *data) {
         return [[XEditorReplaceResult alloc] initWithStatus:XEditorFindStatusNotFound count:0 replacedStart:selStart replacedEnd:selEnd];
     }
 
-    const int sf = [self sciFlagsFrom:flags];
-    const sptr_t found = [self searchNeedle:needle sciFlags:sf start:selStart end:selEnd];
+    NSData *pattern = [self regexPatternFrom:needle flags:flags];
+    const int sf = [self sciFlagsFrom:flags needle:pattern];
+    const sptr_t found = [self searchNeedle:pattern sciFlags:sf start:selStart end:selEnd];
     if (found < 0) {
         const XEditorFindStatus status = [self lastSearchHitInvalidRegex]
             ? XEditorFindStatusInvalidRegex
@@ -616,7 +693,8 @@ static NSStringEncoding detectEncoding(NSData *data) {
         return [[XEditorReplaceResult alloc] initWithStatus:XEditorFindStatusOk count:0 replacedStart:0 replacedEnd:0];
     }
 
-    const int sf = [self sciFlagsFrom:flags];
+    NSData *pattern = [self regexPatternFrom:needle flags:flags];
+    const int sf = [self sciFlagsFrom:flags needle:pattern];
     const BOOL regex = (flags & XEditorSearchRegex) != 0;
     NSInteger delta = 0;
     NSInteger done = 0;
@@ -630,7 +708,7 @@ static NSStringEncoding detectEncoding(NSData *data) {
         if (regex) {
             // SCI_REPLACETARGETRE substitutes using the group positions left by
             // the most recent search, so refresh them for this exact target.
-            const sptr_t refreshed = [self searchNeedle:needle sciFlags:sf start:s end:e];
+            const sptr_t refreshed = [self searchNeedle:pattern sciFlags:sf start:s end:e];
             if (refreshed < 0) continue;
             s = refreshed;
             e = [sci message:SCI_GETTARGETEND wParam:0 lParam:0];
