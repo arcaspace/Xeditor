@@ -1,14 +1,15 @@
 import AppKit
 
-final class MainViewController: NSViewController, NativeTabBarDelegate, FindBarDelegate, StatusBarDelegate {
+final class MainViewController: NSViewController, NativeTabBarDelegate, FindHost, StatusBarDelegate {
     let store: DocumentStore
 
     private let tabBar = NativeTabBarView()
-    private let findBar = FindBarView()
     private let editorContainer = NSView()
+    private let resultsPanel = FindResultsPanel(frame: .zero)
+    private let resultsDivider = SplitDividerView()
     private let statusBar = StatusBarView()
-
-    private var isFindBarVisible: Bool = false
+    private var resultsHeight: CGFloat = 240
+    private var resultsVisible = false
 
     init(store: DocumentStore) {
         self.store = store
@@ -28,16 +29,22 @@ final class MainViewController: NSViewController, NativeTabBarDelegate, FindBarD
         tabBar.delegate = self
         view.addSubview(tabBar)
 
-        // 2. Find Bar (hidden initially)
-        findBar.delegate = self
-        findBar.isHidden = true
-        view.addSubview(findBar)
-
-        // 3. Editor Container
+        // 2. Editor Container
         editorContainer.wantsLayer = true
         view.addSubview(editorContainer)
 
-        // 4. Status Bar
+        // 3. Search results, docked below the editor (hidden until a Find All)
+        resultsPanel.isHidden = true
+        resultsPanel.onClose = { [weak self] in self?.setResultsVisible(false) }
+        view.addSubview(resultsPanel)
+
+        resultsDivider.isHidden = true
+        resultsDivider.onDrag = { [weak self] delta in
+            self?.adjustResultsHeight(by: delta)
+        }
+        view.addSubview(resultsDivider)
+
+        // 3. Status Bar
         statusBar.delegate = self
         view.addSubview(statusBar)
 
@@ -55,27 +62,48 @@ final class MainViewController: NSViewController, NativeTabBarDelegate, FindBarD
         let b = view.bounds
         let tabBarH: CGFloat = 32
         let statusBarH: CGFloat = 22
-        let findBarH: CGFloat = isFindBarVisible ? 32 : 0
+        let dividerH: CGFloat = 6
 
         tabBar.frame = NSRect(x: 0, y: b.height - tabBarH, width: b.width, height: tabBarH)
-
-        if isFindBarVisible {
-            findBar.isHidden = false
-            findBar.frame = NSRect(x: 0, y: b.height - tabBarH - findBarH, width: b.width, height: findBarH)
-        } else {
-            findBar.isHidden = true
-            findBar.frame = NSRect(x: 0, y: b.height - tabBarH, width: b.width, height: 0)
-        }
-
         statusBar.frame = NSRect(x: 0, y: 0, width: b.width, height: statusBarH)
 
-        let editorY = statusBarH
-        let editorH = max(0, b.height - tabBarH - findBarH - statusBarH)
-        editorContainer.frame = NSRect(x: 0, y: editorY, width: b.width, height: editorH)
+        let editorTop = b.height - tabBarH
+        var editorBottom = statusBarH
+
+        if resultsVisible {
+            let available = max(0, editorTop - statusBarH)
+            let maxPanelH = max(80, available - 140)
+            let panelH = min(max(resultsHeight, 80), maxPanelH)
+            resultsHeight = panelH
+            resultsPanel.frame = NSRect(x: 0, y: statusBarH, width: b.width, height: panelH)
+            resultsDivider.frame = NSRect(x: 0, y: statusBarH + panelH, width: b.width, height: dividerH)
+            editorBottom = statusBarH + panelH + dividerH
+        }
+
+        editorContainer.frame = NSRect(x: 0, y: editorBottom, width: b.width,
+                                       height: max(0, editorTop - editorBottom))
 
         if let active = store.activeDocument {
             active.editor.view.frame = editorContainer.bounds
         }
+    }
+
+    /// Splits the editor area and shows the search results beneath it.
+    private func setResultsVisible(_ visible: Bool) {
+        guard resultsVisible != visible else { return }
+        resultsVisible = visible
+        resultsPanel.isHidden = !visible
+        resultsDivider.isHidden = !visible
+        layoutViews()
+    }
+
+    private func adjustResultsHeight(by delta: CGFloat) {
+        guard resultsVisible else { return }
+        let b = view.bounds
+        let available = max(0, b.height - 32 - 22)
+        let maxPanelH = max(80, available - 140)
+        resultsHeight = min(max(resultsHeight - delta, 80), maxPanelH)
+        layoutViews()
     }
 
     func displayActiveDocument() {
@@ -95,12 +123,6 @@ final class MainViewController: NSViewController, NativeTabBarDelegate, FindBarD
         tabBar.updateActiveTab(activeID: active.id)
         statusBar.update(document: active)
         view.window?.title = active.displayName
-
-        // Update find match count if find bar is open
-        if isFindBarVisible {
-            let count = Int(active.editor.matchCount(active.editor.selectedText(), flags: findBar.searchFlags))
-            findBar.updateMatchCount(count)
-        }
     }
 
     func reloadAll() {
@@ -172,69 +194,42 @@ final class MainViewController: NSViewController, NativeTabBarDelegate, FindBarD
         return true
     }
 
-    // MARK: - Find Bar
+    // MARK: - FindHost
 
-    func toggleFindBar() {
-        isFindBarVisible.toggle()
-        layoutViews()
-        if isFindBarVisible {
-            let sel = store.activeDocument?.editor.selectedText() ?? ""
-            findBar.setInitialText(sel)
-        } else {
-            if let active = store.activeDocument {
-                view.window?.makeFirstResponder(active.editor.view)
-            }
+    var findHostSelectedText: String {
+        store.activeDocument?.editor.selectedText() ?? ""
+    }
+
+    func findHostReveal(documentID: EditorDocument.ID) {
+        guard let doc = store.documents.first(where: { $0.id == documentID }) else { return }
+        if store.activeID != documentID {
+            store.select(doc)
+            displayActiveDocument()
         }
     }
 
-    func findBarDidFindNext(text: String, flags: XEditorSearchFlags) {
-        guard let editor = store.activeDocument?.editor else { return }
-        let pos = editor.findNext(text, flags: flags)
-        if pos >= 0 {
-            updateActiveDocumentContent()
-        }
-        findBar.updateMatchCount(Int(editor.matchCount(text, flags: flags)))
+    func findHostOpenFile(_ url: URL) {
+        _ = store.open(url: url)
+        reloadAll()
     }
 
-    func findBarDidFindPrevious(text: String, flags: XEditorSearchFlags) {
-        guard let editor = store.activeDocument?.editor else { return }
-        let pos = editor.findPrevious(text, flags: flags)
-        if pos >= 0 {
-            updateActiveDocumentContent()
-        }
-        findBar.updateMatchCount(Int(editor.matchCount(text, flags: flags)))
-    }
-
-    func findBarDidReplace(text: String, replacement: String, flags: XEditorSearchFlags) {
-        guard let editor = store.activeDocument?.editor else { return }
-        let isRegex = (flags.contains(.regex))
-        if !editor.replaceCurrent(replacement, regex: isRegex) {
-            _ = editor.findNext(text, flags: flags)
-            _ = editor.replaceCurrent(replacement, regex: isRegex)
-        }
-        _ = editor.findNext(text, flags: flags)
-        findBar.updateMatchCount(Int(editor.matchCount(text, flags: flags)))
+    func findHostRefresh() {
         updateActiveDocumentContent()
     }
 
-    func findBarDidReplaceAll(text: String, replacement: String, flags: XEditorSearchFlags) {
-        guard let editor = store.activeDocument?.editor else { return }
-        _ = editor.replaceAll(text, with: replacement, flags: flags)
-        findBar.updateMatchCount(Int(editor.matchCount(text, flags: flags)))
-        updateActiveDocumentContent()
+    func findHostRefreshAll() {
+        reloadAll()
     }
 
-    func findBarDidChangeSearchText(text: String, flags: XEditorSearchFlags) {
-        guard let editor = store.activeDocument?.editor else { return }
-        findBar.updateMatchCount(Int(editor.matchCount(text, flags: flags)))
+    func findHostFocusEditor() {
+        guard let active = store.activeDocument else { return }
+        view.window?.makeFirstResponder(active.editor.view)
     }
 
-    func findBarDidDismiss() {
-        isFindBarVisible = false
-        layoutViews()
-        if let active = store.activeDocument {
-            view.window?.makeFirstResponder(active.editor.view)
-        }
+    var findHostResultsPanel: FindResultsPanel { resultsPanel }
+
+    func findHostSetResultsVisible(_ visible: Bool) {
+        setResultsVisible(visible)
     }
 
     // MARK: - StatusBarDelegate
@@ -261,5 +256,37 @@ final class AppearanceAwareView: NSView {
         effectiveAppearance.performAsCurrentDrawingAppearance {
             layer?.backgroundColor = NSColor.windowBackgroundColor.cgColor
         }
+    }
+}
+
+/// Thin grab bar between the editor and the docked results panel.
+final class SplitDividerView: NSView {
+    var onDrag: ((CGFloat) -> Void)?
+
+    private var lastY: CGFloat = 0
+
+    override func resetCursorRects() {
+        addCursorRect(bounds, cursor: .resizeUpDown)
+    }
+
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        needsDisplay = true
+    }
+
+    override func draw(_ dirtyRect: NSRect) {
+        NSColor.separatorColor.setFill()
+        NSRect(x: 0, y: bounds.midY - 0.5, width: bounds.width, height: 1).fill()
+    }
+
+    override func mouseDown(with event: NSEvent) {
+        lastY = convert(event.locationInWindow, from: nil).y
+    }
+
+    override func mouseDragged(with event: NSEvent) {
+        let y = convert(event.locationInWindow, from: nil).y
+        let delta = y - lastY
+        lastY = y
+        onDrag?(delta)
     }
 }

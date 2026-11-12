@@ -2,6 +2,8 @@ import AppKit
 
 final class MainWindowController: NSWindowController, NSWindowDelegate {
     let mainVC: MainViewController
+    /// Called after the main window closes, so auxiliary panels can follow.
+    var onWindowClose: (() -> Void)?
 
     init(store: DocumentStore) {
         self.mainVC = MainViewController(store: store)
@@ -36,5 +38,9 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
             }
         }
         return true
+    }
+
+    func windowWillClose(_ notification: Notification) {
+        onWindowClose?()
     }
 }

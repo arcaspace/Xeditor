@@ -17,6 +17,12 @@ extern "C" Scintilla::ILexer5 *CreateLexer(const char *name);
 // so 20 is safely outside every reserved range.
 static const int INDICATOR_OCCURRENCE = 20;
 
+// Five mark indicators for the Find window's Mark tab. Also outside every
+// reserved range (8 container, 20 occurrence, 32-35 IME, 36-43 undo history).
+static const int INDICATOR_MARK_FIRST = 21;
+static const int INDICATOR_MARK_LAST  = 25;
+static const int INDICATOR_MARK_COUNT = INDICATOR_MARK_LAST - INDICATOR_MARK_FIRST + 1;
+
 static int ColorRefFromNSColor(NSColor *color) {
     NSColor *rgb = [color colorUsingColorSpace:[NSColorSpace sRGBColorSpace]];
     if (!rgb) {
@@ -85,6 +91,73 @@ static NSStringEncoding detectEncoding(NSData *data) {
 }
 
 // ---------------------------------------------------------------------------
+
+@implementation XEditorFindMatch
+- (instancetype)initWithStart:(NSInteger)start end:(NSInteger)end line:(NSInteger)line {
+    self = [super init];
+    if (self) {
+        _start = start;
+        _end = end;
+        _line = line;
+    }
+    return self;
+}
+@end
+
+@implementation XEditorFindResult
+- (instancetype)initWithStatus:(XEditorFindStatus)status
+                       wrapped:(BOOL)wrapped
+                         match:(XEditorFindMatch *)match {
+    self = [super init];
+    if (self) {
+        _status = status;
+        _wrapped = wrapped;
+        _match = match;
+    }
+    return self;
+}
+@end
+
+@implementation XEditorFindAllResult
+- (instancetype)initWithStatus:(XEditorFindStatus)status
+                       matches:(NSArray<XEditorFindMatch *> *)matches
+                     truncated:(BOOL)truncated {
+    self = [super init];
+    if (self) {
+        _status = status;
+        _matches = [matches copy] ?: @[];
+        _truncated = truncated;
+    }
+    return self;
+}
+@end
+
+@implementation XEditorCountResult
+- (instancetype)initWithStatus:(XEditorFindStatus)status count:(NSInteger)count {
+    self = [super init];
+    if (self) {
+        _status = status;
+        _count = count;
+    }
+    return self;
+}
+@end
+
+@implementation XEditorReplaceResult
+- (instancetype)initWithStatus:(XEditorFindStatus)status
+                         count:(NSInteger)count
+                 replacedStart:(NSInteger)replacedStart
+                   replacedEnd:(NSInteger)replacedEnd {
+    self = [super init];
+    if (self) {
+        _status = status;
+        _count = count;
+        _replacedStart = replacedStart;
+        _replacedEnd = replacedEnd;
+    }
+    return self;
+}
+@end
 
 @interface EditorBridge () <ScintillaNotificationProtocol>
 @property (nonatomic, strong) ScintillaView *sci;
@@ -183,6 +256,15 @@ static NSStringEncoding detectEncoding(NSData *data) {
     [sci message:SCI_INDICSETUNDER       wParam:INDICATOR_OCCURRENCE lParam:1];
     [sci message:SCI_INDICSETALPHA       wParam:INDICATOR_OCCURRENCE lParam:60];
     [sci message:SCI_INDICSETOUTLINEALPHA wParam:INDICATOR_OCCURRENCE lParam:100];
+
+    // Find > Mark: five translucent rounded boxes. Colours are applied per
+    // theme in applyThemeDark:.
+    for (int indicator = INDICATOR_MARK_FIRST; indicator <= INDICATOR_MARK_LAST; indicator++) {
+        [sci message:SCI_INDICSETSTYLE        wParam:indicator lParam:INDIC_ROUNDBOX];
+        [sci message:SCI_INDICSETUNDER        wParam:indicator lParam:1];
+        [sci message:SCI_INDICSETALPHA        wParam:indicator lParam:70];
+        [sci message:SCI_INDICSETOUTLINEALPHA wParam:indicator lParam:100];
+    }
 
     // Default font. "SF Mono" ships with Terminal/Xcode but is not installed as
     // a regular system font, so it silently resolved to Helvetica. Menlo is
@@ -327,149 +409,300 @@ static NSStringEncoding detectEncoding(NSData *data) {
 - (int)sciFlagsFrom:(XEditorSearchFlags)flags {
     int sf = 0;
     if (flags & XEditorSearchCaseSensitive) sf |= SCFIND_MATCHCASE;
-    if (flags & XEditorSearchRegex)         sf |= SCFIND_REGEXP | SCFIND_POSIX;
+    if (flags & XEditorSearchRegex)         sf |= SCFIND_REGEXP | SCFIND_CXX11REGEX;
     if (flags & XEditorSearchWholeWord)     sf |= SCFIND_WHOLEWORD;
     return sf;
 }
 
-- (NSInteger)findNext:(NSString *)text flags:(XEditorSearchFlags)flags {
-    if (text.length == 0) return -1;
+/// Runs one search in an explicit target range. Scintilla expects
+/// targetStart > targetEnd for a backwards search.
+- (sptr_t)searchNeedle:(NSData *)needle sciFlags:(int)sf start:(sptr_t)start end:(sptr_t)end {
     ScintillaView *sci = self.sci;
-    const char *s = text.UTF8String;
+    // The status is sticky until cleared, so reset it before every search;
+    // otherwise an earlier bad regex would mislabel this result.
+    [sci message:SCI_SETSTATUS     wParam:SC_STATUS_OK lParam:0];
+    [sci message:SCI_SETTARGETSTART wParam:start lParam:0];
+    [sci message:SCI_SETTARGETEND   wParam:end   lParam:0];
+    [sci message:SCI_SETSEARCHFLAGS wParam:sf    lParam:0];
+    return [sci message:SCI_SEARCHINTARGET wParam:needle.length lParam:(sptr_t)needle.bytes];
+}
+
+- (BOOL)lastSearchHitInvalidRegex {
+    return [self.sci message:SCI_GETSTATUS wParam:0 lParam:0] == SC_STATUS_WARN_REGEX;
+}
+
+- (sptr_t)clampPosition:(NSInteger)position docLength:(sptr_t)docLen {
+    if (position < 0) return 0;
+    if (position > (NSInteger)docLen) return docLen;
+    return (sptr_t)position;
+}
+
+- (XEditorFindResult *)findBytes:(NSData *)needle
+                           flags:(XEditorSearchFlags)flags
+                   startPosition:(NSInteger)startPosition
+                         forward:(BOOL)forward
+                            wrap:(BOOL)wrap {
+    if (needle.length == 0) {
+        return [[XEditorFindResult alloc] initWithStatus:XEditorFindStatusNotFound wrapped:NO match:nil];
+    }
+    ScintillaView *sci = self.sci;
+    const sptr_t docLen = [sci message:SCI_GETLENGTH wParam:0 lParam:0];
+    const sptr_t start = [self clampPosition:startPosition docLength:docLen];
     const int sf = [self sciFlagsFrom:flags];
 
-    sptr_t selEnd = [sci message:SCI_GETSELECTIONEND wParam:0 lParam:0];
-    sptr_t docLen = [sci message:SCI_GETLENGTH        wParam:0 lParam:0];
+    sptr_t pos = [self searchNeedle:needle sciFlags:sf start:start end:(forward ? docLen : 0)];
+    BOOL wrapped = NO;
 
-    [sci message:SCI_SETTARGETSTART  wParam:selEnd lParam:0];
-    [sci message:SCI_SETTARGETEND    wParam:docLen lParam:0];
-    [sci message:SCI_SETSEARCHFLAGS  wParam:sf     lParam:0];
-
-    sptr_t pos = [sci message:SCI_SEARCHINTARGET wParam:strlen(s) lParam:(sptr_t)s];
-
-    if (pos < 0 && (flags & XEditorSearchWrap)) {
-        [sci message:SCI_SETTARGETSTART wParam:0      lParam:0];
-        [sci message:SCI_SETTARGETEND   wParam:selEnd lParam:0];
-        pos = [sci message:SCI_SEARCHINTARGET wParam:strlen(s) lParam:(sptr_t)s];
+    if (pos < 0 && [self lastSearchHitInvalidRegex]) {
+        return [[XEditorFindResult alloc] initWithStatus:XEditorFindStatusInvalidRegex wrapped:NO match:nil];
     }
 
-    if (pos >= 0) {
-        sptr_t end = [sci message:SCI_GETTARGETEND wParam:0 lParam:0];
-        [sci message:SCI_SETSEL      wParam:pos lParam:end];
-        [sci message:SCI_SCROLLCARET wParam:0   lParam:0];
+    if (pos < 0 && wrap) {
+        // Continue from the opposite end, stopping at the original position so
+        // a single match is never re-selected (the old code looped here).
+        if (forward) {
+            pos = [self searchNeedle:needle sciFlags:sf start:0 end:start];
+        } else {
+            pos = [self searchNeedle:needle sciFlags:sf start:docLen end:start];
+        }
+        wrapped = YES;
     }
-    return (NSInteger)pos;
+
+    if (pos < 0) {
+        const XEditorFindStatus status = [self lastSearchHitInvalidRegex]
+            ? XEditorFindStatusInvalidRegex
+            : XEditorFindStatusNotFound;
+        return [[XEditorFindResult alloc] initWithStatus:status wrapped:NO match:nil];
+    }
+
+    const sptr_t end = [sci message:SCI_GETTARGETEND wParam:0 lParam:0];
+    const sptr_t line = [sci message:SCI_LINEFROMPOSITION wParam:pos lParam:0];
+    XEditorFindMatch *match = [[XEditorFindMatch alloc] initWithStart:pos
+                                                                  end:end
+                                                                 line:line + 1];
+    return [[XEditorFindResult alloc] initWithStatus:XEditorFindStatusOk wrapped:wrapped match:match];
+}
+
+- (XEditorFindAllResult *)findAllBytes:(NSData *)needle
+                                 flags:(XEditorSearchFlags)flags
+                               inStart:(NSInteger)start
+                                 inEnd:(NSInteger)end
+                              maxCount:(NSInteger)maxCount {
+    if (needle.length == 0) {
+        return [[XEditorFindAllResult alloc] initWithStatus:XEditorFindStatusOk matches:@[] truncated:NO];
+    }
+    ScintillaView *sci = self.sci;
+    const sptr_t docLen = [sci message:SCI_GETLENGTH wParam:0 lParam:0];
+    sptr_t rangeStart = [self clampPosition:start docLength:docLen];
+    sptr_t rangeEnd = (end < 0) ? docLen : [self clampPosition:end docLength:docLen];
+    if (rangeStart > rangeEnd) {
+        return [[XEditorFindAllResult alloc] initWithStatus:XEditorFindStatusBadRange matches:@[] truncated:NO];
+    }
+
+    const int sf = [self sciFlagsFrom:flags];
+    NSMutableArray<XEditorFindMatch *> *matches = [NSMutableArray array];
+    BOOL truncated = NO;
+    sptr_t pos = rangeStart;
+
+    while (pos <= rangeEnd) {
+        const sptr_t found = [self searchNeedle:needle sciFlags:sf start:pos end:rangeEnd];
+        if (found < 0) {
+            if ([self lastSearchHitInvalidRegex]) {
+                return [[XEditorFindAllResult alloc] initWithStatus:XEditorFindStatusInvalidRegex matches:@[] truncated:NO];
+            }
+            break;
+        }
+        const sptr_t matchEnd = [sci message:SCI_GETTARGETEND wParam:0 lParam:0];
+        const sptr_t line = [sci message:SCI_LINEFROMPOSITION wParam:found lParam:0];
+        [matches addObject:[[XEditorFindMatch alloc] initWithStart:found end:matchEnd line:line + 1]];
+
+        sptr_t next = matchEnd;
+        if (matchEnd <= found) {
+            // Zero-length match (e.g. ^ or $): step over one whole character.
+            next = [sci message:SCI_POSITIONAFTER wParam:found lParam:0];
+            if (next <= found) break;
+        }
+
+        if (maxCount > 0 && (NSInteger)matches.count >= maxCount) {
+            // Probe once to report truncation honestly.
+            truncated = [self searchNeedle:needle sciFlags:sf start:next end:rangeEnd] >= 0;
+            break;
+        }
+        pos = next;
+    }
+
+    return [[XEditorFindAllResult alloc] initWithStatus:XEditorFindStatusOk
+                                                matches:matches
+                                              truncated:truncated];
+}
+
+- (XEditorCountResult *)countBytes:(NSData *)needle
+                             flags:(XEditorSearchFlags)flags
+                           inStart:(NSInteger)start
+                             inEnd:(NSInteger)end {
+    XEditorFindAllResult *all = [self findAllBytes:needle flags:flags inStart:start inEnd:end maxCount:0];
+    if (all.status != XEditorFindStatusOk) {
+        return [[XEditorCountResult alloc] initWithStatus:all.status count:0];
+    }
+    return [[XEditorCountResult alloc] initWithStatus:XEditorFindStatusOk count:(NSInteger)all.matches.count];
+}
+
+- (NSInteger)replaceBytes:(NSData *)replacement
+                  inStart:(NSInteger)start
+                    inEnd:(NSInteger)end
+                    regex:(BOOL)regex {
+    ScintillaView *sci = self.sci;
+    const sptr_t docLen = [sci message:SCI_GETLENGTH wParam:0 lParam:0];
+    const sptr_t s = [self clampPosition:start docLength:docLen];
+    const sptr_t e = [self clampPosition:end docLength:docLen];
+    if (e < s) return -1;
+
+    [sci message:SCI_SETTARGETSTART wParam:s lParam:0];
+    [sci message:SCI_SETTARGETEND   wParam:e lParam:0];
+
+   const char *bytes = replacement.length > 0 ? (const char *)replacement.bytes : "";
+    return (NSInteger)[sci message:(regex ? SCI_REPLACETARGETRE : SCI_REPLACETARGET)
+                             wParam:(uptr_t)replacement.length
+                             lParam:(sptr_t)bytes];
+}
+
+- (XEditorReplaceResult *)replaceCurrentBytes:(NSData *)needle
+                                  replacement:(NSData *)replacement
+                                        flags:(XEditorSearchFlags)flags {
+    ScintillaView *sci = self.sci;
+    const sptr_t selStart = [sci message:SCI_GETSELECTIONSTART wParam:0 lParam:0];
+    const sptr_t selEnd   = [sci message:SCI_GETSELECTIONEND   wParam:0 lParam:0];
+    if (selStart == selEnd || needle.length == 0) {
+        return [[XEditorReplaceResult alloc] initWithStatus:XEditorFindStatusNotFound count:0 replacedStart:selStart replacedEnd:selEnd];
+    }
+
+    const int sf = [self sciFlagsFrom:flags];
+    const sptr_t found = [self searchNeedle:needle sciFlags:sf start:selStart end:selEnd];
+    if (found < 0) {
+        const XEditorFindStatus status = [self lastSearchHitInvalidRegex]
+            ? XEditorFindStatusInvalidRegex
+            : XEditorFindStatusNotFound;
+        return [[XEditorReplaceResult alloc] initWithStatus:status count:0 replacedStart:selStart replacedEnd:selEnd];
+    }
+
+    const sptr_t matchEnd = [sci message:SCI_GETTARGETEND wParam:0 lParam:0];
+    const BOOL regex = (flags & XEditorSearchRegex) != 0;
+    const NSInteger inserted = [self replaceBytes:replacement inStart:found inEnd:matchEnd regex:regex];
+    if (inserted < 0) {
+        return [[XEditorReplaceResult alloc] initWithStatus:XEditorFindStatusBadRange count:0 replacedStart:found replacedEnd:matchEnd];
+    }
+
+    const sptr_t newEnd = found + inserted;
+    [sci message:SCI_SETSEL      wParam:found  lParam:newEnd];
+    [sci message:SCI_SCROLLCARET wParam:0      lParam:0];
+    return [[XEditorReplaceResult alloc] initWithStatus:XEditorFindStatusOk
+                                                   count:1
+                                           replacedStart:found
+                                             replacedEnd:newEnd];
+}
+
+- (XEditorReplaceResult *)replaceAllBytes:(NSData *)needle
+                              replacement:(NSData *)replacement
+                                    flags:(XEditorSearchFlags)flags
+                                  inStart:(NSInteger)start
+                                    inEnd:(NSInteger)end {
+    ScintillaView *sci = self.sci;
+    XEditorFindAllResult *all = [self findAllBytes:needle flags:flags
+                                           inStart:start inEnd:end maxCount:0];
+    if (all.status != XEditorFindStatusOk) {
+        return [[XEditorReplaceResult alloc] initWithStatus:all.status count:0 replacedStart:0 replacedEnd:0];
+    }
+    if (all.matches.count == 0) {
+        return [[XEditorReplaceResult alloc] initWithStatus:XEditorFindStatusOk count:0 replacedStart:0 replacedEnd:0];
+    }
+
+    const int sf = [self sciFlagsFrom:flags];
+    const BOOL regex = (flags & XEditorSearchRegex) != 0;
+    NSInteger delta = 0;
+    NSInteger done = 0;
+    NSInteger lastStart = 0;
+    NSInteger lastEnd = 0;
+
+    [sci message:SCI_BEGINUNDOACTION wParam:0 lParam:0];
+    for (XEditorFindMatch *match in all.matches) {
+        sptr_t s = (sptr_t)(match.start + delta);
+        sptr_t e = (sptr_t)(match.end + delta);
+        if (regex) {
+            // SCI_REPLACETARGETRE substitutes using the group positions left by
+            // the most recent search, so refresh them for this exact target.
+            const sptr_t refreshed = [self searchNeedle:needle sciFlags:sf start:s end:e];
+            if (refreshed < 0) continue;
+            s = refreshed;
+            e = [sci message:SCI_GETTARGETEND wParam:0 lParam:0];
+        }
+        const NSInteger inserted = [self replaceBytes:replacement inStart:s inEnd:e regex:regex];
+        if (inserted < 0) continue;
+        delta += inserted - (NSInteger)(e - s);
+        lastStart = (NSInteger)s;
+        lastEnd = (NSInteger)s + inserted;
+        done++;
+    }
+    [sci message:SCI_ENDUNDOACTION wParam:0 lParam:0];
+
+    return [[XEditorReplaceResult alloc] initWithStatus:XEditorFindStatusOk
+                                                   count:done
+                                           replacedStart:lastStart
+                                             replacedEnd:lastEnd];
+}
+
+// MARK: - Legacy string wrappers
+// Kept so the old inline find bar keeps working while the Find window is built.
+
+- (NSInteger)findNext:(NSString *)text flags:(XEditorSearchFlags)flags {
+    NSData *needle = [text dataUsingEncoding:NSUTF8StringEncoding];
+    if (needle.length == 0) return -1;
+    sptr_t selEnd = [self.sci message:SCI_GETSELECTIONEND wParam:0 lParam:0];
+    XEditorFindResult *result = [self findBytes:needle
+                                          flags:flags
+                                  startPosition:selEnd
+                                        forward:YES
+                                           wrap:(flags & XEditorSearchWrap) != 0];
+    if (!result.match) return -1;
+    [self selectRangeStart:result.match.start end:result.match.end];
+    return result.match.start;
 }
 
 - (NSInteger)findPrevious:(NSString *)text flags:(XEditorSearchFlags)flags {
-    if (text.length == 0) return -1;
-    ScintillaView *sci = self.sci;
-    const char *s = text.UTF8String;
-    const int sf = [self sciFlagsFrom:flags];
-
-    sptr_t selStart = [sci message:SCI_GETSELECTIONSTART wParam:0 lParam:0];
-
-    // Search backwards: target start > target end signals reverse search.
-    [sci message:SCI_SETTARGETSTART  wParam:selStart lParam:0];
-    [sci message:SCI_SETTARGETEND    wParam:0        lParam:0];
-    [sci message:SCI_SETSEARCHFLAGS  wParam:sf       lParam:0];
-
-    sptr_t pos = [sci message:SCI_SEARCHINTARGET wParam:strlen(s) lParam:(sptr_t)s];
-
-    if (pos < 0 && (flags & XEditorSearchWrap)) {
-        sptr_t docLen = [sci message:SCI_GETLENGTH wParam:0 lParam:0];
-        [sci message:SCI_SETTARGETSTART wParam:docLen   lParam:0];
-        [sci message:SCI_SETTARGETEND   wParam:selStart lParam:0];
-        pos = [sci message:SCI_SEARCHINTARGET wParam:strlen(s) lParam:(sptr_t)s];
-    }
-
-    if (pos >= 0) {
-        sptr_t end = [sci message:SCI_GETTARGETEND wParam:0 lParam:0];
-        [sci message:SCI_SETSEL      wParam:pos lParam:end];
-        [sci message:SCI_SCROLLCARET wParam:0   lParam:0];
-    }
-    return (NSInteger)pos;
+    NSData *needle = [text dataUsingEncoding:NSUTF8StringEncoding];
+    if (needle.length == 0) return -1;
+    sptr_t selStart = [self.sci message:SCI_GETSELECTIONSTART wParam:0 lParam:0];
+    XEditorFindResult *result = [self findBytes:needle
+                                          flags:flags
+                                  startPosition:selStart
+                                        forward:NO
+                                           wrap:(flags & XEditorSearchWrap) != 0];
+    if (!result.match) return -1;
+    [self selectRangeStart:result.match.start end:result.match.end];
+    return result.match.start;
 }
 
 - (NSInteger)matchCount:(NSString *)text flags:(XEditorSearchFlags)flags {
-    if (text.length == 0) return 0;
-    ScintillaView *sci = self.sci;
-    const char *s = text.UTF8String;
-    const int sf = [self sciFlagsFrom:flags];
-    sptr_t docLen = [sci message:SCI_GETLENGTH wParam:0 lParam:0];
-
-    NSInteger count = 0;
-    sptr_t searchStart = 0;
-
-    while (searchStart < docLen) {
-        [sci message:SCI_SETTARGETSTART wParam:searchStart lParam:0];
-        [sci message:SCI_SETTARGETEND   wParam:docLen      lParam:0];
-        [sci message:SCI_SETSEARCHFLAGS wParam:sf          lParam:0];
-
-        sptr_t pos = [sci message:SCI_SEARCHINTARGET wParam:strlen(s) lParam:(sptr_t)s];
-        if (pos < 0) break;
-
-        count++;
-        sptr_t targetEnd = [sci message:SCI_GETTARGETEND wParam:0 lParam:0];
-        searchStart = targetEnd > searchStart ? targetEnd : searchStart + 1;
-    }
-    return count;
+    NSData *needle = [text dataUsingEncoding:NSUTF8StringEncoding];
+    if (needle.length == 0) return 0;
+    return [self countBytes:needle flags:flags inStart:0 inEnd:-1].count;
 }
 
 - (BOOL)replaceCurrent:(NSString *)replacement regex:(BOOL)regex {
     ScintillaView *sci = self.sci;
-    sptr_t selStart = [sci message:SCI_GETSELECTIONSTART wParam:0 lParam:0];
-    sptr_t selEnd   = [sci message:SCI_GETSELECTIONEND   wParam:0 lParam:0];
+    const sptr_t selStart = [sci message:SCI_GETSELECTIONSTART wParam:0 lParam:0];
+    const sptr_t selEnd   = [sci message:SCI_GETSELECTIONEND   wParam:0 lParam:0];
     if (selStart == selEnd) return NO;
-
-    [sci message:SCI_SETTARGETSTART wParam:selStart lParam:0];
-    [sci message:SCI_SETTARGETEND   wParam:selEnd   lParam:0];
-
-    const char *r = replacement.UTF8String;
-    if (regex) {
-        [sci message:SCI_REPLACETARGETRE wParam:-1 lParam:(sptr_t)r];
-    } else {
-        [sci message:SCI_REPLACETARGET   wParam:-1 lParam:(sptr_t)r];
-    }
-    return YES;
+    NSData *data = [replacement dataUsingEncoding:NSUTF8StringEncoding] ?: [NSData data];
+    return [self replaceBytes:data inStart:selStart inEnd:selEnd regex:regex] >= 0;
 }
 
 - (NSInteger)replaceAll:(NSString *)text
                    with:(NSString *)replacement
                   flags:(XEditorSearchFlags)flags {
-    if (text.length == 0) return 0;
-    ScintillaView *sci = self.sci;
-    const char *s = text.UTF8String;
-    const char *r = replacement.UTF8String;
-    const int sf = [self sciFlagsFrom:flags];
-    const BOOL regex = (flags & XEditorSearchRegex) != 0;
-
-    [sci message:SCI_BEGINUNDOACTION wParam:0 lParam:0];
-
-    NSInteger count = 0;
-    sptr_t searchStart = 0;
-
-    while (YES) {
-        sptr_t docLen = [sci message:SCI_GETLENGTH wParam:0 lParam:0];
-        [sci message:SCI_SETTARGETSTART wParam:searchStart lParam:0];
-        [sci message:SCI_SETTARGETEND   wParam:docLen      lParam:0];
-        [sci message:SCI_SETSEARCHFLAGS wParam:sf          lParam:0];
-
-        sptr_t pos = [sci message:SCI_SEARCHINTARGET wParam:strlen(s) lParam:(sptr_t)s];
-        if (pos < 0) break;
-
-        sptr_t repLen;
-        if (regex) {
-            repLen = [sci message:SCI_REPLACETARGETRE wParam:-1 lParam:(sptr_t)r];
-        } else {
-            repLen = [sci message:SCI_REPLACETARGET   wParam:-1 lParam:(sptr_t)r];
-        }
-        searchStart = pos + (repLen > 0 ? repLen : 1);
-        count++;
-    }
-
-    [sci message:SCI_ENDUNDOACTION wParam:0 lParam:0];
-    return count;
+    NSData *needle = [text dataUsingEncoding:NSUTF8StringEncoding];
+    if (needle.length == 0) return 0;
+    NSData *rep = [replacement dataUsingEncoding:NSUTF8StringEncoding] ?: [NSData data];
+    return [self replaceAllBytes:needle replacement:rep flags:flags inStart:0 inEnd:-1].count;
 }
 
 - (NSString *)selectedText {
@@ -484,6 +717,152 @@ static NSStringEncoding detectEncoding(NSData *data) {
     NSString *result = [NSString stringWithUTF8String:buf] ?: @"";
     free(buf);
     return result;
+}
+
+// ---------------------------------------------------------------------------
+#pragma mark - Selection / Offsets
+// ---------------------------------------------------------------------------
+
+- (NSInteger)selectionStart {
+    return (NSInteger)[self.sci message:SCI_GETSELECTIONSTART wParam:0 lParam:0];
+}
+
+- (NSInteger)selectionEnd {
+    return (NSInteger)[self.sci message:SCI_GETSELECTIONEND wParam:0 lParam:0];
+}
+
+- (NSInteger)documentLength {
+    return (NSInteger)[self.sci message:SCI_GETLENGTH wParam:0 lParam:0];
+}
+
+- (NSInteger)positionAfterPosition:(NSInteger)position {
+    return (NSInteger)[self.sci message:SCI_POSITIONAFTER wParam:(sptr_t)position lParam:0];
+}
+
+- (NSInteger)positionBeforePosition:(NSInteger)position {
+    return (NSInteger)[self.sci message:SCI_POSITIONBEFORE wParam:(sptr_t)position lParam:0];
+}
+
+- (void)selectRangeStart:(NSInteger)start end:(NSInteger)end {
+    [self.sci message:SCI_SETSEL      wParam:(sptr_t)start lParam:(sptr_t)end];
+    [self.sci message:SCI_SCROLLCARET wParam:0           lParam:0];
+}
+
+- (NSString *)lineText:(NSInteger)line {
+    ScintillaView *sci = self.sci;
+    const sptr_t lineCount = [sci message:SCI_GETLINECOUNT wParam:0 lParam:0];
+    if (line < 1 || line > lineCount) return @"";
+
+    const sptr_t len = [sci message:SCI_GETLINE wParam:(sptr_t)(line - 1) lParam:0];
+    if (len <= 0) return @"";
+
+    char *buf = (char *)malloc((size_t)len + 1);
+    if (!buf) return @"";
+    [sci message:SCI_GETLINE wParam:(sptr_t)(line - 1) lParam:(sptr_t)buf];
+    buf[len] = '\0';
+    NSString *text = [NSString stringWithUTF8String:buf] ?: @"";
+    free(buf);
+    return text;
+}
+
+- (NSInteger)lineStartPosition:(NSInteger)line {
+    ScintillaView *sci = self.sci;
+    const sptr_t lineCount = [sci message:SCI_GETLINECOUNT wParam:0 lParam:0];
+    if (line < 1 || line > lineCount) return 0;
+    return (NSInteger)[sci message:SCI_POSITIONFROMLINE wParam:(sptr_t)(line - 1) lParam:0];
+}
+
+- (void)selectLine:(NSInteger)line rangeInLine:(NSRange)rangeInLine {    ScintillaView *sci = self.sci;
+    const sptr_t lineCount = [sci message:SCI_GETLINECOUNT wParam:0 lParam:0];
+    if (line < 1 || line > lineCount) return;
+
+    const sptr_t lineStart = [sci message:SCI_POSITIONFROMLINE wParam:(sptr_t)(line - 1) lParam:0];
+    NSString *text = [self lineText:line];
+
+    NSUInteger loc = (rangeInLine.location == NSNotFound) ? 0 : rangeInLine.location;
+    if (loc > text.length) loc = text.length;
+    NSUInteger len = rangeInLine.length;
+    if (len > text.length - loc) len = text.length - loc;
+
+    // The result model speaks UTF-16 (Foundation) ranges; Scintilla wants
+    // UTF-8 byte offsets, so convert through the line prefix.
+    sptr_t startByte = lineStart;
+    sptr_t endByte = lineStart;
+    if (loc > 0) {
+        NSString *prefix = [text substringToIndex:loc];
+        startByte += (sptr_t)[prefix dataUsingEncoding:NSUTF8StringEncoding].length;
+    }
+    NSString *endPrefix = [text substringToIndex:loc + len];
+    endByte += (sptr_t)[endPrefix dataUsingEncoding:NSUTF8StringEncoding].length;
+
+    [sci message:SCI_SETSEL      wParam:startByte lParam:endByte];
+    [sci message:SCI_SCROLLCARET wParam:0         lParam:0];
+}
+
+// ---------------------------------------------------------------------------
+#pragma mark - Marks
+// ---------------------------------------------------------------------------
+
+- (XEditorCountResult *)markAllBytes:(NSData *)needle
+                               flags:(XEditorSearchFlags)flags
+                           indicator:(NSInteger)indicator
+                            maxCount:(NSInteger)maxCount {
+    ScintillaView *sci = self.sci;
+    XEditorFindAllResult *all = [self findAllBytes:needle flags:flags
+                                           inStart:0 inEnd:-1 maxCount:maxCount];
+    if (all.status != XEditorFindStatusOk) {
+        return [[XEditorCountResult alloc] initWithStatus:all.status count:0];
+    }
+
+    [sci message:SCI_SETINDICATORCURRENT wParam:(sptr_t)indicator lParam:0];
+    NSInteger filled = 0;
+    for (XEditorFindMatch *match in all.matches) {
+        if (match.end <= match.start) continue; // invisible, skip
+        [sci message:SCI_INDICATORFILLRANGE wParam:(sptr_t)match.start
+                                            lParam:(sptr_t)(match.end - match.start)];
+        filled++;
+    }
+    return [[XEditorCountResult alloc] initWithStatus:XEditorFindStatusOk count:filled];
+}
+
+- (void)clearIndicatorRange:(NSInteger)indicator {
+    ScintillaView *sci = self.sci;
+    [sci message:SCI_SETINDICATORCURRENT wParam:(sptr_t)indicator lParam:0];
+    [sci message:SCI_INDICATORCLEARRANGE wParam:0
+                                        lParam:[sci message:SCI_GETLENGTH wParam:0 lParam:0]];
+}
+
+- (void)clearAllMarkIndicators {
+    for (int indicator = INDICATOR_MARK_FIRST; indicator <= INDICATOR_MARK_LAST; indicator++) {
+        [self clearIndicatorRange:indicator];
+    }
+}
+
+- (void)addBookmarkAtLine:(NSInteger)line {
+    ScintillaView *sci = self.sci;
+    const sptr_t lineCount = [sci message:SCI_GETLINECOUNT wParam:0 lParam:0];
+    if (line < 1 || line > lineCount) return;
+    const sptr_t lineIdx = (sptr_t)(line - 1);
+    const sptr_t state = [sci message:SCI_MARKERGET wParam:lineIdx lParam:0];
+    if ((state & (1 << 0)) == 0) {
+        [sci message:SCI_MARKERADD wParam:lineIdx lParam:0];
+    }
+}
+
++ (NSColor *)markColorForIndex:(NSInteger)index dark:(BOOL)dark {
+    const CGFloat alpha = 1.0;
+    switch (index % INDICATOR_MARK_COUNT) {
+        case 0: return dark ? [NSColor colorWithSRGBRed:0.38 green:0.62 blue:0.98 alpha:alpha]
+                            : [NSColor colorWithSRGBRed:0.20 green:0.47 blue:0.93 alpha:alpha];
+        case 1: return dark ? [NSColor colorWithSRGBRed:0.45 green:0.85 blue:0.55 alpha:alpha]
+                            : [NSColor colorWithSRGBRed:0.13 green:0.62 blue:0.30 alpha:alpha];
+        case 2: return dark ? [NSColor colorWithSRGBRed:0.98 green:0.74 blue:0.35 alpha:alpha]
+                            : [NSColor colorWithSRGBRed:0.90 green:0.53 blue:0.08 alpha:alpha];
+        case 3: return dark ? [NSColor colorWithSRGBRed:0.76 green:0.58 blue:0.98 alpha:alpha]
+                            : [NSColor colorWithSRGBRed:0.55 green:0.28 blue:0.88 alpha:alpha];
+        default: return dark ? [NSColor colorWithSRGBRed:0.98 green:0.50 blue:0.55 alpha:alpha]
+                             : [NSColor colorWithSRGBRed:0.85 green:0.20 blue:0.30 alpha:alpha];
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -1101,15 +1480,11 @@ static NSStringEncoding detectEncoding(NSData *data) {
     }
 
     // Folder markers: the marker's fore colour fills the box, the back colour
-    // draws its frame, the +/- glyph and the connecting fold lines. The
-    // Scintilla default (black fill, white frame/lines) assumes a grey gutter;
-    // since the gutter now follows the editor background, white fold lines
-    // vanish in the light theme. Use a white box with black frame/lines there,
-    // and a grey box with light lines in dark mode.
-    const int foldFill = dark ? ColorRefFromNSColor(
-        [NSColor colorWithSRGBRed:0.55 green:0.55 blue:0.58 alpha:1.0]) : 0xFFFFFF;
-    const int foldLine = dark ? ColorRefFromNSColor(
-        [NSColor colorWithSRGBRed:0.75 green:0.75 blue:0.78 alpha:1.0]) : 0x000000;
+    // draws its frame, the +/- glyph and the connecting fold lines.
+    // White box with black frame/lines in the light theme; black box with
+    // white frame/lines in the dark theme.
+    const int foldFill = dark ? 0x000000 : 0xFFFFFF;
+    const int foldLine = dark ? 0xFFFFFF : 0x000000;
     for (int marker = SC_MARKNUM_FOLDEREND; marker <= SC_MARKNUM_FOLDEROPEN; marker++) {
         [sci message:SCI_MARKERSETFORE wParam:marker lParam:foldFill];
         [sci message:SCI_MARKERSETBACK wParam:marker lParam:foldLine];
@@ -1132,6 +1507,13 @@ static NSStringEncoding detectEncoding(NSData *data) {
         : [NSColor colorWithSRGBRed:0.96 green:0.78 blue:0.30 alpha:1.0];
     [sci message:SCI_INDICSETFORE wParam:INDICATOR_OCCURRENCE
                                  lParam:ColorRefFromNSColor(occurrence)];
+
+    // Find > Mark palette, refreshed so marks stay legible after a theme switch.
+    for (int i = 0; i < INDICATOR_MARK_COUNT; i++) {
+        NSColor *mark = [EditorBridge markColorForIndex:i dark:dark];
+        [sci message:SCI_INDICSETFORE wParam:INDICATOR_MARK_FIRST + i
+                                     lParam:ColorRefFromNSColor(mark)];
+    }
 }
 
 /// Lexilla assigns style numbers but no colours.  Map the common style indices

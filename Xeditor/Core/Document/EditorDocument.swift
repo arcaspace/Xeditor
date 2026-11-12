@@ -63,6 +63,9 @@ final class EditorDocument: ObservableObject, Identifiable {
     @Published private(set) var lineCount = 1
     @Published private(set) var cursorLine = 1
     @Published private(set) var cursorColumn = 1
+    /// Bumped after every text change; search results use it to detect stale
+    /// byte offsets and re-run the query before jumping.
+    private(set) var contentRevision = 0
 
     var displayName: String { url?.lastPathComponent ?? "Untitled" }
 
@@ -100,6 +103,7 @@ final class EditorDocument: ObservableObject, Identifiable {
         bridge.contentChangeHandler = { [weak self] in
             guard let self else { return }
             DispatchQueue.main.async {
+                self.contentRevision += 1
                 self.lineCount = Int(self.editor.lineCount())
                 self.cursorLine = Int(self.editor.currentLine())
                 self.cursorColumn = Int(self.editor.currentColumn())

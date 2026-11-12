@@ -6,6 +6,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, PreferencesDelegate, G
     private var windowController: MainWindowController?
     private var preferencesController: PreferencesWindowController?
     private var goToLineController: GoToLineWindowController?
+    private var findController: FindWindowController?
     private var appearanceObservation: NSKeyValueObservation?
 
     private static let sessionFilesKey = "session.files"
@@ -24,6 +25,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, PreferencesDelegate, G
         windowController = wc
         wc.showWindow(nil)
         wc.window?.makeKeyAndOrderFront(nil)
+        wc.onWindowClose = { [weak self] in
+            self?.findController?.closeAllWindows()
+        }
 
         // Session restore or open CLI files
         let paths = CommandLine.arguments.dropFirst().filter {
@@ -38,6 +42,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, PreferencesDelegate, G
         }
 
         wc.mainVC.reloadAll()
+
         applyGlobalSettings()
         observeSystemAppearance()
     }
@@ -68,6 +73,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, PreferencesDelegate, G
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        findController?.closeAllWindows()
         saveSession()
     }
 
@@ -184,26 +190,63 @@ final class AppDelegate: NSObject, NSApplicationDelegate, PreferencesDelegate, G
         windowController?.mainVC.displayActiveDocument()
     }
 
-    @objc func toggleFind(_ sender: Any?) {
-        windowController?.mainVC.toggleFindBar()
+    /// Lazily creates the modeless Find window. It survives being closed so
+    /// ⌘G keeps working after the panel is dismissed.
+    private func findWindow() -> FindWindowController {
+        if let findController { return findController }
+        let controller = FindWindowController(store: store, host: windowController?.mainVC)
+        findController = controller
+        return controller
+    }
+
+    @objc func showFind(_ sender: Any?) {
+        findWindow().showFind()
+    }
+
+    @objc func showReplace(_ sender: Any?) {
+        findWindow().showReplace()
+    }
+
+    @objc func showDirectoryFind(_ sender: Any?) {
+        findWindow().showDirectoryFind()
+    }
+
+    @objc func showMark(_ sender: Any?) {
+        findWindow().showMark()
     }
 
     @objc func findNext(_ sender: Any?) {
-        guard let doc = store.activeDocument, let text = doc.editor.selectedText() as String?, !text.isEmpty else {
-            windowController?.mainVC.toggleFindBar()
-            return
-        }
-        doc.editor.findNext(text, flags: [.wrap])
-        windowController?.mainVC.updateActiveDocumentContent()
+        findWindow().findNext()
     }
 
     @objc func findPrevious(_ sender: Any?) {
-        guard let doc = store.activeDocument, let text = doc.editor.selectedText() as String?, !text.isEmpty else {
-            windowController?.mainVC.toggleFindBar()
-            return
-        }
-        doc.editor.findPrevious(text, flags: [.wrap])
-        windowController?.mainVC.updateActiveDocumentContent()
+        findWindow().findPrevious()
+    }
+
+    @objc func findAllInCurrentDocument(_ sender: Any?) {
+        let find = findWindow()
+        find.showFind()
+        find.performFindAll(openDocuments: false)
+    }
+
+    @objc func findAllInOpenDocuments(_ sender: Any?) {
+        let find = findWindow()
+        find.showFind()
+        find.performFindAll(openDocuments: true)
+    }
+
+    @objc func replaceAllInOpenDocuments(_ sender: Any?) {
+        let find = findWindow()
+        find.showReplace()
+        find.performReplaceAll(openDocuments: true)
+    }
+
+    @objc func clearFindMarks(_ sender: Any?) {
+        findWindow().clearAllMarks()
+    }
+
+    @objc func clearFindHistory(_ sender: Any?) {
+        findWindow().clearFindHistory()
     }
 
     @objc func showGoToLine(_ sender: Any?) {
@@ -355,13 +398,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate, PreferencesDelegate, G
         // 4. Find Menu
         let findMenuItem = NSMenuItem()
         let findMenu = NSMenu(title: "Find")
-        findMenu.addItem(withTitle: "Find…", action: #selector(toggleFind(_:)), keyEquivalent: "f")
+        findMenu.addItem(withTitle: "Find…", action: #selector(showFind(_:)), keyEquivalent: "f")
         findMenu.addItem(withTitle: "Find Next", action: #selector(findNext(_:)), keyEquivalent: "g")
         let findPrevItem = NSMenuItem(title: "Find Previous", action: #selector(findPrevious(_:)), keyEquivalent: "G")
         findMenu.addItem(findPrevItem)
-        let replaceItem = NSMenuItem(title: "Find and Replace…", action: #selector(toggleFind(_:)), keyEquivalent: "f")
+        let replaceItem = NSMenuItem(title: "Find and Replace…", action: #selector(showReplace(_:)), keyEquivalent: "f")
         replaceItem.keyEquivalentModifierMask = [.command, .option]
         findMenu.addItem(replaceItem)
+        let dirFindItem = NSMenuItem(title: "Find in Files…", action: #selector(showDirectoryFind(_:)), keyEquivalent: "F")
+        findMenu.addItem(dirFindItem)
+        let markItem = NSMenuItem(title: "Mark All…", action: #selector(showMark(_:)), keyEquivalent: "m")
+        markItem.keyEquivalentModifierMask = [.command, .option]
+        findMenu.addItem(markItem)
+        findMenu.addItem(NSMenuItem.separator())
+        findMenu.addItem(withTitle: "Find All in Current Document", action: #selector(findAllInCurrentDocument(_:)), keyEquivalent: "")
+        findMenu.addItem(withTitle: "Find All in Open Documents", action: #selector(findAllInOpenDocuments(_:)), keyEquivalent: "")
+        findMenu.addItem(withTitle: "Replace All in Open Documents", action: #selector(replaceAllInOpenDocuments(_:)), keyEquivalent: "")
+        findMenu.addItem(NSMenuItem.separator())
+        findMenu.addItem(withTitle: "Clear Marks", action: #selector(clearFindMarks(_:)), keyEquivalent: "")
+        findMenu.addItem(withTitle: "Clear Find History", action: #selector(clearFindHistory(_:)), keyEquivalent: "")
         findMenu.addItem(NSMenuItem.separator())
         findMenu.addItem(withTitle: "Go to Line…", action: #selector(showGoToLine(_:)), keyEquivalent: "l")
         findMenuItem.submenu = findMenu
