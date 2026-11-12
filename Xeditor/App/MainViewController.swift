@@ -122,7 +122,8 @@ final class MainViewController: NSViewController, NativeTabBarDelegate, FindHost
         let b = view.bounds
         let available = max(0, b.height - 32 - 22)
         let maxPanelH = max(80, available - 140)
-        resultsHeight = min(max(resultsHeight - delta, 80), maxPanelH)
+        // The divider sits on top of the panel, so moving it up grows the panel.
+        resultsHeight = min(max(resultsHeight + delta, 80), maxPanelH)
         layoutViews()
     }
 
@@ -364,11 +365,14 @@ final class SplitDividerView: NSView {
     }
 
     override func mouseDown(with event: NSEvent) {
-        lastY = convert(event.locationInWindow, from: nil).y
+        // Track in window coordinates: the divider moves under the cursor while
+        // dragging, so view-local coordinates would cancel out the movement and
+        // the panel would barely follow the mouse.
+        lastY = event.locationInWindow.y
     }
 
     override func mouseDragged(with event: NSEvent) {
-        let y = convert(event.locationInWindow, from: nil).y
+        let y = event.locationInWindow.y
         let delta = y - lastY
         lastY = y
         onDrag?(delta)

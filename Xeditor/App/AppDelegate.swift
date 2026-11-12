@@ -48,6 +48,32 @@ final class AppDelegate: NSObject, NSApplicationDelegate, PreferencesDelegate, G
 
         applyGlobalSettings()
         observeSystemAppearance()
+        applyApplicationIcon()
+    }
+
+    /// The standard About panel does not consult CFBundleIconFile in this
+    /// build, so the icon is loaded explicitly and handed to it.
+    private func applyApplicationIcon() {
+        guard let icon = bundledAppIcon else { return }
+        NSApp.applicationIconImage = icon
+    }
+
+    private var bundledAppIcon: NSImage? {
+        let name = Bundle.main.object(forInfoDictionaryKey: "CFBundleIconFile") as? String
+            ?? "AppIcon"
+        let resource = name.hasSuffix(".icns") ? String(name.dropLast(5)) : name
+        guard let url = Bundle.main.url(forResource: resource, withExtension: "icns") else {
+            return nil
+        }
+        return NSImage(contentsOf: url)
+    }
+
+    @objc private func showAboutPanel(_ sender: Any?) {
+        var options: [NSApplication.AboutPanelOptionKey: Any] = [:]
+        if let icon = bundledAppIcon ?? NSApp.applicationIconImage {
+            options[.applicationIcon] = icon
+        }
+        NSApp.orderFrontStandardAboutPanel(options: options)
     }
 
     /// Re-resolve the editor theme when macOS switches between light and dark
@@ -210,10 +236,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, PreferencesDelegate, G
         findWindow().showReplace()
     }
 
-    @objc func showDirectoryFind(_ sender: Any?) {
-        findWindow().showDirectoryFind()
-    }
-
     @objc func showMark(_ sender: Any?) {
         findWindow().showMark()
     }
@@ -352,7 +374,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, PreferencesDelegate, G
         // 1. Application Menu
         let appMenuItem = NSMenuItem()
         let appMenu = NSMenu()
-        appMenu.addItem(withTitle: "About Xeditor", action: #selector(NSApplication.orderFrontStandardAboutPanel(_:)), keyEquivalent: "")
+        appMenu.addItem(withTitle: "About Xeditor", action: #selector(showAboutPanel(_:)), keyEquivalent: "")
         appMenu.addItem(NSMenuItem.separator())
         appMenu.addItem(withTitle: "Preferences…", action: #selector(showPreferences(_:)), keyEquivalent: ",")
         appMenu.addItem(NSMenuItem.separator())
@@ -441,8 +463,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, PreferencesDelegate, G
         let replaceItem = NSMenuItem(title: "Find and Replace…", action: #selector(showReplace(_:)), keyEquivalent: "f")
         replaceItem.keyEquivalentModifierMask = [.command, .option]
         findMenu.addItem(replaceItem)
-        let dirFindItem = NSMenuItem(title: "Find in Files…", action: #selector(showDirectoryFind(_:)), keyEquivalent: "F")
-        findMenu.addItem(dirFindItem)
         let markItem = NSMenuItem(title: "Mark All…", action: #selector(showMark(_:)), keyEquivalent: "m")
         markItem.keyEquivalentModifierMask = [.command, .option]
         findMenu.addItem(markItem)

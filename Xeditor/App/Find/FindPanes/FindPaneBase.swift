@@ -1,54 +1,195 @@
 import AppKit
 
-/// Shared scaffolding for the find panes: the search/replacement fields with
-/// history, the regex hint menu, Return/Escape handling and the two-column
-/// layout (content on the left, wide action buttons on the right).
+/// One-line field with a leading icon and a history dropdown, drawn as a
+/// single rounded box. Used for both the find and replace inputs.
+final class FindFieldBox: NSView {
+    let textField = NSTextField()
+    private let iconView = NSImageView()
+    private let historyButton = NSButton()
+    private var history: [String] = []
+
+    var onClearHistory: (() -> Void)?
+    var isFocused = false {
+        didSet { needsDisplay = true }
+    }
+
+    init(symbol: String, toolTip: String, placeholder: String) {
+        super.init(frame: .zero)
+
+        textField.isBordered = false
+        textField.isBezeled = false
+        textField.drawsBackground = false
+        textField.focusRingType = .none
+        textField.font = .systemFont(ofSize: 13)
+        textField.placeholderString = placeholder
+        textField.cell?.usesSingleLineMode = true
+        textField.lineBreakMode = .byTruncatingTail
+        textField.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        textField.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+
+        iconView.image = NSImage(systemSymbolName: symbol, accessibilityDescription: nil)
+        iconView.contentTintColor = .secondaryLabelColor
+        iconView.imageScaling = .scaleProportionallyDown
+
+        historyButton.bezelStyle = .inline
+        historyButton.isBordered = false
+        historyButton.image = NSImage(systemSymbolName: "chevron.down",
+                                      accessibilityDescription: toolTip)
+        historyButton.imagePosition = .imageOnly
+        historyButton.contentTintColor = .secondaryLabelColor
+        historyButton.toolTip = toolTip
+        historyButton.target = self
+        historyButton.action = #selector(showHistory)
+        historyButton.setContentHuggingPriority(.required, for: .horizontal)
+
+        for view in [iconView, historyButton, textField] {
+            addSubview(view)
+            view.translatesAutoresizingMaskIntoConstraints = false
+        }
+        NSLayoutConstraint.activate([
+            heightAnchor.constraint(equalToConstant: 34),
+            iconView.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 11),
+            iconView.centerYAnchor.constraint(equalTo: centerYAnchor),
+            iconView.widthAnchor.constraint(equalToConstant: 15),
+            iconView.heightAnchor.constraint(equalToConstant: 15),
+
+            historyButton.leadingAnchor.constraint(equalTo: iconView.trailingAnchor, constant: 6),
+            historyButton.centerYAnchor.constraint(equalTo: centerYAnchor),
+            historyButton.widthAnchor.constraint(equalToConstant: 14),
+
+            textField.leadingAnchor.constraint(equalTo: historyButton.trailingAnchor, constant: 6),
+            textField.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -10),
+            textField.centerYAnchor.constraint(equalTo: centerYAnchor),
+            textField.heightAnchor.constraint(equalToConstant: 18)
+        ])
+    }
+
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    func setHistory(_ items: [String]) {
+        history = items
+    }
+
+    override func draw(_ dirtyRect: NSRect) {
+        if let editor = textField.currentEditor(), window?.firstResponder === editor {
+            isFocused = true
+        }
+        let focused = isFocused
+        let path = NSBezierPath(roundedRect: bounds.insetBy(dx: focused ? 1.5 : 1,
+                                                           dy: focused ? 1.5 : 1),
+                                xRadius: 6, yRadius: 6)
+        fillColor.setFill()
+        path.fill()
+        if focused {
+            NSColor.controlAccentColor.setStroke()
+            path.lineWidth = 2
+        } else {
+            borderColor.setStroke()
+            path.lineWidth = 1
+        }
+        path.stroke()
+    }
+
+    private var fillColor: NSColor {
+        if effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua {
+            return NSColor(calibratedWhite: 0.12, alpha: 1)
+        }
+        return NSColor.textBackgroundColor
+    }
+
+    private var borderColor: NSColor {
+        if effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua {
+            return NSColor(calibratedWhite: 0.42, alpha: 0.8)
+        }
+        return NSColor(calibratedWhite: 0.8, alpha: 1)
+    }
+
+    override func mouseDown(with event: NSEvent) {
+        window?.makeFirstResponder(textField)
+    }
+
+    @objc private func showHistory(_ sender: NSButton) {
+        let menu = NSMenu()
+        if history.isEmpty {
+            let empty = NSMenuItem(title: "No History", action: nil, keyEquivalent: "")
+            empty.isEnabled = false
+            menu.addItem(empty)
+        } else {
+            for value in history {
+                let item = NSMenuItem(title: value,
+                                      action: #selector(historyChosen(_:)),
+                                      keyEquivalent: "")
+                item.target = self
+                item.representedObject = value
+                menu.addItem(item)
+            }
+            menu.addItem(.separator())
+            let clear = NSMenuItem(title: "Clear History",
+                                   action: #selector(clearHistory),
+                                   keyEquivalent: "")
+            clear.target = self
+            menu.addItem(clear)
+        }
+        menu.popUp(positioning: nil,
+                   at: NSPoint(x: 0, y: 0),
+                   in: sender)
+    }
+
+    @objc private func historyChosen(_ sender: NSMenuItem) {
+        guard let value = sender.representedObject as? String else { return }
+        textField.stringValue = value
+        window?.makeFirstResponder(textField)
+    }
+
+    @objc private func clearHistory() {
+        onClearHistory?()
+    }
+}
+
+/// Shared scaffolding for the find panes: the find/replace fields with their
+/// history lists, the regex hint menu, the options row, Return/Escape handling,
+/// and the footer buttons.
 @MainActor
-class FindPaneBase: NSView, NSComboBoxDelegate {
+class FindPaneBase: NSView, NSTextFieldDelegate {
     weak var controller: FindWindowController?
 
-    let searchField: NSComboBox
-    let replacementField: NSComboBox?
+    let searchBox: FindFieldBox
+    let replaceBox: FindFieldBox?
     let optionsView: SearchOptionsView
 
+    var searchField: NSTextField { searchBox.textField }
+    var replacementField: NSTextField? { replaceBox?.textField }
     var replacementText: String { replacementField?.stringValue ?? "" }
 
-    private let regexHint = NSPopUpButton(frame: .zero, pullsDown: true)
+    /// Footer buttons, left and right of the flexible spacer.
+    private(set) var footerLeading: [NSView] = []
+    private(set) var footerTrailing: [NSView] = []
 
-    private static let regexSnippets: [(String, String)] = [
-        ("Any character  .", "."),
-        ("Digits  \\d", "\\d"),
-        ("Word characters  \\w", "\\w"),
-        ("Whitespace  \\s", "\\s"),
-        ("Any sequence  .*", ".*"),
-        ("One or more  +", "+"),
-        ("Zero or one  ?", "?"),
-        ("Line start  ^", "^"),
-        ("Line end  $", "$"),
-        ("Character set  [abc]", "[abc]"),
-        ("Negated set  [^abc]", "[^abc]"),
-        ("Group  ( )", "()"),
-        ("Either  a|b", "|"),
-        ("Back-reference  \\1", "\\1")
-    ]
+    private let regexHintButton = NSButton()
+    private lazy var regexHelpPopover = RegexHelpPopover.make()
 
     init(controller: FindWindowController,
          showsReplacement: Bool,
          optionsVariant: SearchOptionsView.Variant) {
         self.controller = controller
-        self.searchField = FindUI.combo(history: FindSettings.shared.queryHistory)
-        self.replacementField = showsReplacement
-            ? FindUI.combo(history: FindSettings.shared.replaceHistory)
+        searchBox = FindFieldBox(symbol: "magnifyingglass",
+                                 toolTip: "Search history",
+                                 placeholder: "Find")
+        replaceBox = showsReplacement
+            ? FindFieldBox(symbol: "pencil", toolTip: "Replace history", placeholder: "Replace with")
             : nil
-        self.optionsView = SearchOptionsView(variant: optionsVariant)
+        optionsView = SearchOptionsView(variant: optionsVariant)
         super.init(frame: .zero)
 
         searchField.delegate = self
         replacementField?.delegate = self
-        searchField.widthAnchor.constraint(greaterThanOrEqualToConstant: 260).isActive = true
-        replacementField?.widthAnchor.constraint(greaterThanOrEqualToConstant: 260).isActive = true
+        searchBox.onClearHistory = { [weak self] in self?.controller?.clearHistory() }
+        replaceBox?.onClearHistory = { [weak self] in self?.controller?.clearHistory() }
 
-        configureRegexHint()
+        configureRegexHintButton()
+        optionsView.trailingAccessory = regexHintButton
         optionsView.onChange = { [weak self] in
             self?.controller?.optionsDidChange()
         }
@@ -58,58 +199,63 @@ class FindPaneBase: NSView, NSComboBoxDelegate {
         fatalError("init(coder:) has not been implemented")
     }
 
-    // MARK: - Layout helpers
+    // MARK: - Card layout
 
-    /// "Find:" row with the search field and the regex hint dropdown.
-    func searchRow(label: String = "Find:") -> NSStackView {
-        regexHint.widthAnchor.constraint(equalToConstant: 108).isActive = true
-        let controls = FindUI.horizontal([searchField, regexHint], spacing: 8)
-        return FindUI.row(label, controls)
-    }
+    /// Builds the field/options column. No card background: the controls sit
+    /// directly on the window, aligned with the footer buttons, so light mode
+    /// does not show a white block against the window.
+    func installCard(extraRows: [NSView] = []) {
+        var rows: [NSView] = [searchBox]
+        if let replaceBox { rows.append(replaceBox) }
+        rows.append(contentsOf: extraRows)
+        rows.append(optionsView)
 
-    func replacementRow(label: String = "Replace with:") -> NSStackView {
-        guard let replacementField else {
-            return FindUI.row(label, NSView())
-        }
-        return FindUI.row(label, replacementField)
-    }
+        let stack = NSStackView(views: rows)
+        stack.orientation = .vertical
+        stack.spacing = 10
+        stack.alignment = .width
 
-    /// Two-column body: `left` stretches to the pane height, `rightViews` form
-    /// the full-width action column.
-    func install(left: NSView, rightViews: [NSView]) {
-        let right = FindUI.verticalFill(rightViews, spacing: 10)
-        addSubview(left)
-        addSubview(right)
-        left.translatesAutoresizingMaskIntoConstraints = false
-        right.translatesAutoresizingMaskIntoConstraints = false
+        let container = NSView()
+        container.addSubview(stack)
+        stack.translatesAutoresizingMaskIntoConstraints = false
         NSLayoutConstraint.activate([
-            left.topAnchor.constraint(equalTo: topAnchor, constant: 18),
-            left.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 20),
-            left.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -16),
-            right.topAnchor.constraint(equalTo: left.topAnchor),
-            right.leadingAnchor.constraint(equalTo: left.trailingAnchor, constant: 24),
-            right.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -20),
-            right.widthAnchor.constraint(equalToConstant: 220)
+            stack.topAnchor.constraint(equalTo: container.topAnchor, constant: 8),
+            stack.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+            stack.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+            stack.bottomAnchor.constraint(equalTo: container.bottomAnchor)
         ])
-        // Every left-column row spans the pane so fields line up on the right
-        // edge, as in notepad--'s dialog.
-        if let stack = left as? NSStackView {
-            for subview in stack.arrangedSubviews {
-                subview.widthAnchor.constraint(equalTo: left.widthAnchor).isActive = true
-            }
+        installContent([container])
+    }
+
+    /// Pins the pane content to the top of the pane, inset like the window's
+    /// footer so fields line up with it.
+    func installContent(_ views: [NSView], spacing: CGFloat = 0) {
+        let stack = NSStackView(views: views)
+        stack.orientation = .vertical
+        stack.spacing = spacing
+        stack.alignment = .width
+        addSubview(stack)
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            stack.topAnchor.constraint(equalTo: topAnchor),
+            stack.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 16),
+            stack.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -16),
+            stack.bottomAnchor.constraint(lessThanOrEqualTo: bottomAnchor)
+        ])
+        for view in views {
+            view.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true
         }
     }
 
-    /// Spacer that pushes the options block to the bottom of the left column.
-    func flexibleSpacer() -> NSView {
-        let spacer = NSView()
-        spacer.setContentHuggingPriority(.defaultLow, for: .vertical)
-        spacer.setContentCompressionResistancePriority(.defaultLow, for: .vertical)
-        return spacer
+    /// Records which buttons the controller should place in the window footer.
+    func setFooter(leading: [NSView] = [], trailing: [NSView] = []) {
+        footerLeading = leading
+        footerTrailing = trailing
     }
 
     func activate() {
         optionsView.reload()
+        reloadHistory()
         window?.makeFirstResponder(searchField)
         searchField.selectText(nil)
     }
@@ -120,10 +266,8 @@ class FindPaneBase: NSView, NSComboBoxDelegate {
 
     func reloadHistory() {
         let settings = FindSettings.shared
-        searchField.removeAllItems()
-        searchField.addItems(withObjectValues: settings.queryHistory)
-        replacementField?.removeAllItems()
-        replacementField?.addItems(withObjectValues: settings.replaceHistory)
+        searchBox.setHistory(settings.queryHistory)
+        replaceBox?.setHistory(settings.replaceHistory)
     }
 
     /// Enter in the search field. Shift-Enter asks for the previous match.
@@ -136,31 +280,47 @@ class FindPaneBase: NSView, NSComboBoxDelegate {
         controller?.performReplace()
     }
 
-    // MARK: - Regex hint
+    // MARK: - Regular-expression help
 
-    private func configureRegexHint() {
-        regexHint.addItem(withTitle: "Regex Hint")
-        regexHint.menu?.addItem(NSMenuItem.separator())
-        for (title, snippet) in Self.regexSnippets {
-            let item = NSMenuItem(title: title, action: #selector(regexHintChosen(_:)), keyEquivalent: "")
-            item.target = self
-            item.representedObject = snippet
-            regexHint.menu?.addItem(item)
-        }
-        regexHint.toolTip = "Insert a regular-expression snippet into the search field."
+    private func configureRegexHintButton() {
+        let button = regexHintButton
+        button.bezelStyle = .inline
+        button.isBordered = false
+        button.image = NSImage(systemSymbolName: "questionmark.circle",
+                               accessibilityDescription: "Regular expression syntax")
+        button.imagePosition = .imageOnly
+        button.contentTintColor = .secondaryLabelColor
+        button.toolTip = "Regular expression syntax reference"
+        button.target = self
+        button.action = #selector(showRegexHelp(_:))
+        button.setContentHuggingPriority(.required, for: .horizontal)
+        button.widthAnchor.constraint(equalToConstant: 17).isActive = true
     }
 
-    @objc private func regexHintChosen(_ sender: NSMenuItem) {
-        guard let snippet = sender.representedObject as? String else { return }
-        if let editor = searchField.currentEditor() as? NSTextView {
-            editor.insertText(snippet, replacementRange: editor.selectedRange())
+    @objc private func showRegexHelp(_ sender: NSButton) {
+        if regexHelpPopover.isShown {
+            regexHelpPopover.close()
         } else {
-            searchField.stringValue += snippet
+            regexHelpPopover.show(relativeTo: sender.bounds, of: sender, preferredEdge: .maxY)
         }
-        window?.makeFirstResponder(searchField)
     }
 
-    // MARK: - NSComboBoxDelegate / NSControlTextEditingDelegate
+    // MARK: - NSTextFieldDelegate
+
+    func controlTextDidBeginEditing(_ obj: Notification) {
+        box(for: obj.object as? NSTextField)?.isFocused = true
+    }
+
+    func controlTextDidEndEditing(_ obj: Notification) {
+        box(for: obj.object as? NSTextField)?.isFocused = false
+    }
+
+    private func box(for field: NSTextField?) -> FindFieldBox? {
+        guard let field else { return nil }
+        if field === searchField { return searchBox }
+        if field === replacementField { return replaceBox }
+        return nil
+    }
 
     func control(_ control: NSControl, textView: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
         if commandSelector == #selector(NSResponder.insertNewline(_:)) {

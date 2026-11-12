@@ -11,11 +11,12 @@ final class FindPanel: NSPanel {
     }
 }
 
-/// Small builders shared by the find panes. The layout mirrors notepad--'s
-/// dialog: a two-column pane with a wide action-button column on the right.
+/// Small builders shared by the find panes. The layout follows macOS
+/// conventions: full-width fields, a single row of options, and a footer with
+/// standard push buttons.
 enum FindUI {
-    static let actionButtonHeight: CGFloat = 36
     static let labelWidth: CGFloat = 96
+    static let defaultButtonKey = "\r"
 
     static func label(_ text: String) -> NSTextField {
         let label = NSTextField(labelWithString: text)
@@ -32,20 +33,25 @@ enum FindUI {
         return label
     }
 
-    static func combo(history: [String]) -> NSComboBox {
-        let combo = NSComboBox()
-        combo.isEditable = true
-        combo.completes = false
-        combo.numberOfVisibleItems = 12
-        combo.font = .systemFont(ofSize: 13)
-        combo.addItems(withObjectValues: history)
-        return combo
+    /// Right-aligned label in front of a card field ("Find:", "Replace with:").
+    static func fieldLabel(_ text: String) -> NSTextField {
+        let label = NSTextField(labelWithString: text)
+        label.font = .systemFont(ofSize: 13)
+        label.textColor = .labelColor
+        label.alignment = .right
+        label.setContentHuggingPriority(.required, for: .horizontal)
+        label.widthAnchor.constraint(equalToConstant: 84).isActive = true
+        return label
     }
 
     static func field(_ placeholder: String = "") -> NSTextField {
         let field = NSTextField()
         field.font = .systemFont(ofSize: 13)
         field.placeholderString = placeholder
+        field.isBordered = true
+        field.isBezeled = true
+        field.bezelStyle = .roundedBezel
+        field.focusRingType = .default
         return field
     }
 
@@ -55,20 +61,43 @@ enum FindUI {
                        keyEquivalent: String = "") -> NSButton {
         let button = NSButton(title: title, target: target, action: action)
         button.bezelStyle = .rounded
+        button.controlSize = .regular
         button.keyEquivalent = keyEquivalent
+        button.setContentHuggingPriority(.required, for: .horizontal)
         return button
     }
 
-    /// Full-width action button for the right-hand column.
-    static func actionButton(_ title: String,
+    /// Footer push button; the one carrying Return becomes the default button.
+    static func footerButton(_ title: String,
                              target: AnyObject?,
-                             action: Selector?) -> NSButton {
+                             action: Selector,
+                             isDefault: Bool = false) -> NSButton {
         let button = NSButton(title: title, target: target, action: action)
         button.bezelStyle = .rounded
-        button.controlSize = .large
-        button.font = .systemFont(ofSize: 13)
-        button.heightAnchor.constraint(equalToConstant: actionButtonHeight).isActive = true
+        button.controlSize = .small
+        button.font = .systemFont(ofSize: 12)
+        if isDefault { button.keyEquivalent = defaultButtonKey }
+        button.setContentHuggingPriority(.required, for: .horizontal)
         return button
+    }
+
+    /// Pull-down menu button (e.g. "All Find ▾"). The first menu item is the
+    /// title shown on the button, as AppKit expects for pull-down buttons.
+    static func pullDown(_ title: String,
+                         target: AnyObject,
+                         items: [(title: String, action: Selector)]) -> NSPopUpButton {
+        let popup = NSPopUpButton(frame: .zero, pullsDown: true)
+        popup.addItem(withTitle: title)
+        popup.menu?.addItem(.separator())
+        for item in items {
+            let menuItem = NSMenuItem(title: item.title, action: item.action, keyEquivalent: "")
+            menuItem.target = target
+            popup.menu?.addItem(menuItem)
+        }
+        popup.controlSize = .small
+        popup.font = .systemFont(ofSize: 12)
+        popup.setContentHuggingPriority(.required, for: .horizontal)
+        return popup
     }
 
     static func checkbox(_ title: String,
@@ -119,7 +148,7 @@ enum FindUI {
         return stack
     }
 
-    /// A label/control row whose label column has a fixed width so all panes
+    /// A label/control row whose label column has a fixed width so all fields
     /// line up.
     static func row(_ label: String,
                     _ control: NSView,
@@ -131,7 +160,7 @@ enum FindUI {
         return stack
     }
 
-    /// Group box with a title, like the "查找模式" box in notepad--.
+    /// Group box with a title, like the "Search Mode" box in notepad--.
     static func group(_ title: String, _ views: [NSView], spacing: CGFloat = 8) -> NSBox {
         let box = NSBox()
         box.title = title
@@ -153,14 +182,11 @@ enum FindUI {
         return box
     }
 
-    /// Puts content in a two-column layout: flexible left side, fixed-width
-    /// action column on the right.
-    static func twoColumn(left: NSView, right: NSView, rightWidth: CGFloat = 220) -> NSStackView {
-        right.widthAnchor.constraint(equalToConstant: rightWidth).isActive = true
-        let stack = horizontal([left, right], spacing: 24)
-        stack.alignment = .top
-        stack.distribution = .fill
-        left.setContentHuggingPriority(.defaultLow, for: .horizontal)
-        return stack
+    /// Horizontal spacer for footers.
+    static func spacer() -> NSView {
+        let spacer = NSView()
+        spacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        spacer.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        return spacer
     }
 }

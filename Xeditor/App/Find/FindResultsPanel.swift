@@ -33,13 +33,9 @@ private final class FoldGutterView: NSView {
         guard let rects = rectsProvider?(), !rects.isEmpty else { return }
         let centerX = bounds.width - 14
         let side: CGFloat = 9
-        // White box with black frame in the light theme; black box with white
-        // frame, +/- and fold lines in the dark theme.
-        let dark = effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
-        let fill = dark ? NSColor(srgbRed: 0.0, green: 0.0, blue: 0.0, alpha: 1)
-                        : NSColor(srgbRed: 1.0, green: 1.0, blue: 1.0, alpha: 1)
-        let frameColor = dark ? NSColor(srgbRed: 1.0, green: 1.0, blue: 1.0, alpha: 1)
-                              : NSColor(srgbRed: 0.0, green: 0.0, blue: 0.0, alpha: 1)
+        // System colors so the markers follow the light and dark appearance.
+        let fill = NSColor.textBackgroundColor
+        let frameColor = NSColor.secondaryLabelColor
 
         for item in rects {
             let header = item.header
@@ -121,14 +117,12 @@ private final class ResultsTextView: NSTextView {
 final class FindResultsPanel: NSView {
     private let headerLabel = NSTextField(labelWithString: "")
     private let summaryLabel = NSTextField(labelWithString: "")
-    private let summaryBar = NSView()
     private let scrollView = NSScrollView()
     private let textView = ResultsTextView(frame: .zero)
     private let gutter = FoldGutterView()
     private var model: SearchResultsModel?
     /// Match shown on each rendered line (0-based), for click-to-jump.
     private var lineToMatch: [Int: SearchResultMatch] = [:]
-    private var groupsByURL: [URL: SearchResultGroup] = [:]
     private var renderedLines = 0
     private var lineStarts: [Int] = []
     /// Folded file groups, their header line and the last line of the group.
@@ -153,22 +147,10 @@ final class FindResultsPanel: NSView {
         headerLabel.lineBreakMode = .byTruncatingTail
         headerLabel.stringValue = "Search Results"
 
-        summaryBar.wantsLayer = true
-        summaryBar.layer?.backgroundColor = NSColor.systemGreen.withAlphaComponent(0.16).cgColor
-        summaryBar.layer?.cornerRadius = 4
         summaryLabel.font = .systemFont(ofSize: 12)
-        summaryLabel.textColor = .labelColor
+        summaryLabel.textColor = .secondaryLabelColor
         summaryLabel.lineBreakMode = .byTruncatingTail
         summaryLabel.maximumNumberOfLines = 1
-
-        summaryBar.addSubview(summaryLabel)
-        summaryLabel.translatesAutoresizingMaskIntoConstraints = false
-        NSLayoutConstraint.activate([
-            summaryLabel.leadingAnchor.constraint(equalTo: summaryBar.leadingAnchor, constant: 8),
-            summaryLabel.trailingAnchor.constraint(equalTo: summaryBar.trailingAnchor, constant: -8),
-            summaryLabel.centerYAnchor.constraint(equalTo: summaryBar.centerYAnchor),
-            summaryBar.heightAnchor.constraint(equalToConstant: 26)
-        ])
 
         let closeButton = NSButton(title: "Close", target: self, action: #selector(closeClicked))
         closeButton.bezelStyle = .rounded
@@ -218,10 +200,10 @@ final class FindResultsPanel: NSView {
         separator.translatesAutoresizingMaskIntoConstraints = false
         addSubview(separator)
         addSubview(headerRow)
-        addSubview(summaryBar)
+        addSubview(summaryLabel)
         addSubview(scrollView)
         headerRow.translatesAutoresizingMaskIntoConstraints = false
-        summaryBar.translatesAutoresizingMaskIntoConstraints = false
+        summaryLabel.translatesAutoresizingMaskIntoConstraints = false
         scrollView.translatesAutoresizingMaskIntoConstraints = false
 
         NSLayoutConstraint.activate([
@@ -234,11 +216,11 @@ final class FindResultsPanel: NSView {
             headerRow.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 12),
             headerRow.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -12),
 
-            summaryBar.topAnchor.constraint(equalTo: headerRow.bottomAnchor, constant: 4),
-            summaryBar.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 12),
-            summaryBar.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -12),
+            summaryLabel.topAnchor.constraint(equalTo: headerRow.bottomAnchor, constant: 2),
+            summaryLabel.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 12),
+            summaryLabel.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -12),
 
-            scrollView.topAnchor.constraint(equalTo: summaryBar.bottomAnchor, constant: 4),
+            scrollView.topAnchor.constraint(equalTo: summaryLabel.bottomAnchor, constant: 4),
             scrollView.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 4),
             scrollView.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -4),
             scrollView.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -6)
@@ -256,9 +238,6 @@ final class FindResultsPanel: NSView {
 
     override func viewDidChangeEffectiveAppearance() {
         super.viewDidChangeEffectiveAppearance()
-        effectiveAppearance.performAsCurrentDrawingAppearance {
-            summaryBar.layer?.backgroundColor = NSColor.systemGreen.withAlphaComponent(0.16).cgColor
-        }
         renderAll()
     }
 
@@ -266,7 +245,6 @@ final class FindResultsPanel: NSView {
 
     func show(model: SearchResultsModel) {
         self.model = model
-        groupsByURL = [:]
         collapsedGroups = []
         renderAll()
         updateHeader()
@@ -276,7 +254,6 @@ final class FindResultsPanel: NSView {
 
     func clear() {
         model = nil
-        groupsByURL = [:]
         collapsedGroups = []
         textView.textStorage?.setAttributedString(NSAttributedString(string: ""))
         lineToMatch = [:]
@@ -288,7 +265,7 @@ final class FindResultsPanel: NSView {
         syncTextViewState()
         headerLabel.stringValue = "No results."
         summaryLabel.stringValue = ""
-        summaryBar.isHidden = true
+        summaryLabel.isHidden = true
     }
 
     private func renderAll() {
@@ -300,15 +277,11 @@ final class FindResultsPanel: NSView {
         foldSpans = [:]
         groupByID = [:]
         renderedLines = 0
-        groupsByURL = [:]
         guard let model else {
             syncTextViewState()
             return
         }
         for group in model.groups {
-            if case let .file(url) = group.location {
-                groupsByURL[url] = group
-            }
             let headerLine = renderedLines
             headerLineToGroup[headerLine] = group
             let id = ObjectIdentifier(group)
@@ -368,7 +341,7 @@ final class FindResultsPanel: NSView {
         guard let model else {
             headerLabel.stringValue = "No results."
             summaryLabel.stringValue = ""
-            summaryBar.isHidden = true
+            summaryLabel.isHidden = true
             return
         }
         let hits = model.totalHits
@@ -377,57 +350,7 @@ final class FindResultsPanel: NSView {
         var detail = "\(model.querySummary)  —  \(hits) hit\(hits == 1 ? "" : "s") in \(files) file\(files == 1 ? "" : "s")"
         if model.truncated { detail += "  (truncated)" }
         summaryLabel.stringValue = detail
-        summaryBar.isHidden = false
-    }
-
-    /// Appends hits from a directory search without rebuilding the whole list.
-    func appendDirectoryHits(_ hits: [DirSearchHit]) {
-        guard !hits.isEmpty else { return }
-        if model == nil {
-            model = SearchResultsModel(querySummary: "", isDirectorySearch: true)
-        }
-        guard let model else { return }
-
-        for hit in hits {
-            let match = SearchResultMatch(location: .file(hit.url),
-                                          line: hit.line,
-                                          byteStart: hit.rangeInLine.location,
-                                          byteEnd: hit.rangeInLine.location + hit.rangeInLine.length,
-                                          preview: hit.preview,
-                                          revision: 0)
-            let group: SearchResultGroup
-            if let existing = groupsByURL[hit.url] {
-                group = existing
-            } else {
-                group = SearchResultGroup(location: .file(hit.url),
-                                          displayName: hit.url.lastPathComponent,
-                                          matches: [])
-                groupsByURL[hit.url] = group
-                model.groups.append(group)
-                let id = ObjectIdentifier(group)
-                groupByID[id] = group
-                headerLineToGroup[renderedLines] = group
-                foldSpans[id] = (renderedLines, renderedLines)
-                appendGroupHeader(group, includeCount: false)
-            }
-            group.matches.append(match)
-            let id = ObjectIdentifier(group)
-            if !collapsedGroups.contains(id) {
-                appendMatchLine(match)
-                if let span = foldSpans[id] {
-                    foldSpans[id] = (span.header, renderedLines - 1)
-                }
-            }
-        }
-        syncTextViewState()
-        updateHeader()
-    }
-
-    /// Re-renders once a directory search finishes so file headers show the
-    /// final hit counts.
-    func finishDirectorySearch() {
-        renderAll()
-        updateHeader()
+        summaryLabel.isHidden = false
     }
 
     // MARK: - Rendering

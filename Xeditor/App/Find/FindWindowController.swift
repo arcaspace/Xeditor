@@ -24,17 +24,15 @@ protocol FindHost: AnyObject {
 enum FindTab: Int, CaseIterable {
     case find
     case replace
-    case directory
     case mark
     case settings
 
     var title: String {
         switch self {
-        case .find:      return "Find"
-        case .replace:   return "Replace"
-        case .directory: return "Dir Find"
-        case .mark:      return "Mark"
-        case .settings:  return "Settings"
+        case .find:     return "Find"
+        case .replace:  return "Replace"
+        case .mark:     return "Mark"
+        case .settings: return "Settings"
         }
     }
 }
@@ -56,55 +54,58 @@ final class FindWindowController: NSObject, NSWindowDelegate {
     private let settings = FindSettings.shared
 
     private let panel: FindPanel
-    private let tabStrip = FindTabStrip()
+    private let tabControl: NSSegmentedControl
     private let paneContainer = NSView()
     private let statusLabel = NSTextField(labelWithString: "")
+    private let footerBar = NSView()
+    private var footerStack: NSStackView?
+    private var footerHeightConstraint: NSLayoutConstraint!
+    private var paneConstraints: [FindTab: [NSLayoutConstraint]] = [:]
 
     private var findPane: FindPaneView!
     private var replacePane: ReplacePaneView!
-    private var dirPane: DirFindPaneView!
     private var markPane: MarkPaneView!
     private var settingsPane: SettingsPaneView!
 
-    private var dirFinder: DirFinder?
     /// Query that produced the current result list, for stale-result relocation.
     private var resultsQuery: SearchQuery?
 
     private static let currentDocumentLimit = 50_000
     private static let openDocumentsLimit = 50_000
     private static let confirmThreshold = 2_000
-    private static let dirHitLimit = 20_000
 
     init(store: DocumentStore, host: FindHost?) {
         self.store = store
         self.session = FindSession(store: store)
         self.host = host
-        self.panel = FindPanel(contentRect: NSRect(x: 0, y: 0, width: 800, height: 580),
-                               styleMask: [.titled, .closable, .resizable, .utilityWindow],
+        self.panel = FindPanel(contentRect: NSRect(x: 0, y: 0, width: 620, height: 260),
+                               styleMask: [.titled, .closable, .resizable],
                                backing: .buffered,
                                defer: false)
+        self.tabControl = NSSegmentedControl(labels: FindTab.allCases.map { $0.title },
+                                             trackingMode: .selectOne,
+                                             target: nil,
+                                             action: nil)
         super.init()
 
-        panel.title = "Find"
+        panel.title = "Find and Replace"
         panel.isFloatingPanel = false
         panel.hidesOnDeactivate = false
         panel.isReleasedWhenClosed = false
         panel.tabbingMode = .disallowed
         panel.delegate = self
         panel.onCancel = { [weak self] in self?.closePanel() }
-        panel.setFrameAutosaveName("XeditorFindWindow")
-        panel.contentMinSize = NSSize(width: 720, height: 500)
+        panel.setFrameAutosaveName("XeditorFindWindow.v3")
+        panel.contentMinSize = NSSize(width: 540, height: 160)
 
         findPane = FindPaneView(controller: self)
         replacePane = ReplacePaneView(controller: self)
-        dirPane = DirFindPaneView(controller: self)
         markPane = MarkPaneView(controller: self)
         settingsPane = SettingsPaneView(controller: self)
 
-        tabStrip.titles = FindTab.allCases.map { $0.title }
-        tabStrip.onSelect = { [weak self] index in
-            self?.selectTab(rawValue: index, activate: true)
-        }
+        tabControl.target = self
+        tabControl.action = #selector(tabControlChanged)
+        tabControl.segmentStyle = .rounded
 
         statusLabel.font = .systemFont(ofSize: 11)
         statusLabel.textColor = .secondaryLabelColor
@@ -113,39 +114,49 @@ final class FindWindowController: NSObject, NSWindowDelegate {
         statusLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
 
         let content = panel.contentView ?? NSView()
-        content.addSubview(tabStrip)
+        content.addSubview(tabControl)
         content.addSubview(paneContainer)
         content.addSubview(statusLabel)
-        for view in [tabStrip, paneContainer, statusLabel] {
+        content.addSubview(footerBar)
+        for view in [tabControl, paneContainer, statusLabel, footerBar] {
             view.translatesAutoresizingMaskIntoConstraints = false
         }
 
         for tab in FindTab.allCases {
-            let view = self.view(for: tab)
-            paneContainer.addSubview(view)
-            view.translatesAutoresizingMaskIntoConstraints = false
-            NSLayoutConstraint.activate([
-                view.topAnchor.constraint(equalTo: paneContainer.topAnchor),
-                view.leadingAnchor.constraint(equalTo: paneContainer.leadingAnchor),
-                view.trailingAnchor.constraint(equalTo: paneContainer.trailingAnchor),
-                view.bottomAnchor.constraint(equalTo: paneContainer.bottomAnchor)
-            ])
+            let paneView = self.view(for: tab)
+            paneContainer.addSubview(paneView)
+            paneView.translatesAutoresizingMaskIntoConstraints = false
+            paneConstraints[tab] = [
+                paneView.topAnchor.constraint(equalTo: paneContainer.topAnchor),
+                paneView.leadingAnchor.constraint(equalTo: paneContainer.leadingAnchor),
+                paneView.trailingAnchor.constraint(equalTo: paneContainer.trailingAnchor),
+                paneView.bottomAnchor.constraint(equalTo: paneContainer.bottomAnchor)
+            ]
+            paneView.isHidden = true
         }
+        // Only the selected pane's constraints may size the window; hidden
+        // panes would otherwise impose their own minimum height.
+        NSLayoutConstraint.deactivate(paneConstraints.values.flatMap { $0 })
 
+        footerHeightConstraint = footerBar.heightAnchor.constraint(equalToConstant: 44)
         NSLayoutConstraint.activate([
-            tabStrip.topAnchor.constraint(equalTo: content.topAnchor),
-            tabStrip.leadingAnchor.constraint(equalTo: content.leadingAnchor),
-            tabStrip.trailingAnchor.constraint(equalTo: content.trailingAnchor),
-            tabStrip.heightAnchor.constraint(equalToConstant: 42),
+            tabControl.topAnchor.constraint(equalTo: content.topAnchor, constant: 14),
+            tabControl.centerXAnchor.constraint(equalTo: content.centerXAnchor),
 
-            paneContainer.topAnchor.constraint(equalTo: tabStrip.bottomAnchor),
+            paneContainer.topAnchor.constraint(equalTo: tabControl.bottomAnchor, constant: 10),
             paneContainer.leadingAnchor.constraint(equalTo: content.leadingAnchor),
             paneContainer.trailingAnchor.constraint(equalTo: content.trailingAnchor),
-            paneContainer.bottomAnchor.constraint(equalTo: statusLabel.topAnchor, constant: -6),
+            paneContainer.bottomAnchor.constraint(equalTo: statusLabel.topAnchor, constant: -4),
 
-            statusLabel.leadingAnchor.constraint(equalTo: content.leadingAnchor, constant: 20),
-            statusLabel.trailingAnchor.constraint(equalTo: content.trailingAnchor, constant: -20),
-            statusLabel.bottomAnchor.constraint(equalTo: content.bottomAnchor, constant: -10)
+            statusLabel.leadingAnchor.constraint(equalTo: content.leadingAnchor, constant: 16),
+            statusLabel.trailingAnchor.constraint(equalTo: content.trailingAnchor, constant: -16),
+            statusLabel.heightAnchor.constraint(equalToConstant: 16),
+            statusLabel.bottomAnchor.constraint(equalTo: footerBar.topAnchor, constant: -4),
+
+            footerBar.leadingAnchor.constraint(equalTo: content.leadingAnchor),
+            footerBar.trailingAnchor.constraint(equalTo: content.trailingAnchor),
+            footerBar.bottomAnchor.constraint(equalTo: content.bottomAnchor),
+            footerHeightConstraint
         ])
 
         loadLastText()
@@ -162,7 +173,6 @@ final class FindWindowController: NSObject, NSWindowDelegate {
         switch tab {
         case .find:      return findPane
         case .replace:   return replacePane
-        case .directory: return dirPane
         case .mark:      return markPane
         case .settings:  return nil
         }
@@ -174,7 +184,7 @@ final class FindWindowController: NSObject, NSWindowDelegate {
     }
 
     private var currentTab: FindTab {
-        FindTab(rawValue: tabStrip.selectedIndex) ?? .find
+        FindTab(rawValue: tabControl.selectedSegment) ?? .find
     }
 
     private var currentPane: FindPaneBase? { pane(for: currentTab) }
@@ -187,7 +197,6 @@ final class FindWindowController: NSObject, NSWindowDelegate {
 
     func showFind() { show(tab: .find) }
     func showReplace() { show(tab: .replace) }
-    func showDirectoryFind() { show(tab: .directory) }
     func showMark() { show(tab: .mark) }
     func showSettings() { show(tab: .settings) }
 
@@ -196,34 +205,111 @@ final class FindWindowController: NSObject, NSWindowDelegate {
         selectTab(rawValue: tab.rawValue, activate: false)
         if !wasVisible {
             prefillFromSelectionOrHistory()
-            if !panel.setFrameUsingName("XeditorFindWindow") {
+            if !panel.setFrameUsingName("XeditorFindWindow.v3") {
                 panel.center()
             }
             panel.makeKeyAndOrderFront(nil)
         } else {
             panel.makeKeyAndOrderFront(nil)
         }
-        applyOpacity()
+        resizePanel(for: tab)
         view(for: tab).activateIfPossible()
     }
 
     private func selectTab(rawValue: Int, activate: Bool) {
         let tab = FindTab(rawValue: rawValue) ?? .find
-        tabStrip.selectedIndex = tab.rawValue
+        tabControl.selectedSegment = tab.rawValue
         settings.lastTab = tab.rawValue
 
         for candidate in FindTab.allCases {
-            view(for: candidate).isHidden = candidate != tab
+            let paneView = view(for: candidate)
+            let selected = candidate == tab
+            paneView.isHidden = !selected
+            let constraints = paneConstraints[candidate] ?? []
+            if selected {
+                NSLayoutConstraint.activate(constraints)
+            } else {
+                NSLayoutConstraint.deactivate(constraints)
+            }
         }
+        rebuildFooter(for: tab)
         setStatus("", kind: .info)
+        resizePanel(for: tab)
         if activate, panel.isVisible {
             panel.makeKeyAndOrderFront(nil)
             view(for: tab).activateIfPossible()
         }
     }
 
+    @objc private func tabControlChanged() {
+        selectTab(rawValue: tabControl.selectedSegment, activate: true)
+    }
+
+    // MARK: - Footer
+
+    /// Rebuilds the bottom button row for the selected tab. Buttons belong to
+    /// the panes; the window only lays them out.
+    private func rebuildFooter(for tab: FindTab) {
+        footerStack?.removeFromSuperview()
+        let pane = view(for: tab)
+        let leading: [NSView]
+        let trailing: [NSView]
+        if let base = pane as? FindPaneBase {
+            leading = base.footerLeading
+            trailing = base.footerTrailing
+        } else if let settings = pane as? SettingsPaneView {
+            leading = settings.footerLeading
+            trailing = settings.footerTrailing
+        } else {
+            leading = []
+            trailing = []
+        }
+        guard !leading.isEmpty || !trailing.isEmpty else {
+            footerHeightConstraint.constant = 0
+            footerStack = nil
+            return
+        }
+
+        footerHeightConstraint.constant = 44
+        let stack = NSStackView(views: leading + [FindUI.spacer()] + trailing)
+        stack.orientation = .horizontal
+        stack.spacing = 8
+        stack.alignment = .centerY
+        footerBar.addSubview(stack)
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            stack.leadingAnchor.constraint(equalTo: footerBar.leadingAnchor, constant: 16),
+            stack.trailingAnchor.constraint(equalTo: footerBar.trailingAnchor, constant: -16),
+            stack.centerYAnchor.constraint(equalTo: footerBar.centerYAnchor)
+        ])
+        footerStack = stack
+    }
+
+    /// Keeps the panel height matched to the selected tab's content.
+    private func resizePanel(for tab: FindTab) {
+        guard panel.isVisible else { return }
+        var frame = panel.frame
+        let currentContentHeight = panel.contentRect(forFrameRect: frame).height
+        let target = tab.preferredContentHeight
+        guard abs(currentContentHeight - target) > 0.5 else { return }
+        frame.size.height += target - currentContentHeight
+        if let screen = panel.screen ?? NSScreen.main {
+            let visible = screen.visibleFrame
+            if frame.height > visible.height - 40 {
+                frame.size.height = visible.height - 40
+            }
+            if frame.maxY > visible.maxY {
+                frame.origin.y = visible.maxY - frame.height
+            }
+            if frame.minY < visible.minY {
+                frame.origin.y = visible.minY
+            }
+        }
+        panel.setFrame(frame, display: true)
+    }
+
     private func loadLastText() {
-        let panes: [FindPaneBase] = [findPane, replacePane, dirPane, markPane]
+        let panes: [FindPaneBase] = [findPane, replacePane, markPane]
         if !settings.lastQuery.isEmpty {
             for pane in panes {
                 pane.searchField.stringValue = settings.lastQuery
@@ -231,7 +317,6 @@ final class FindWindowController: NSObject, NSWindowDelegate {
         }
         if !settings.lastReplacement.isEmpty {
             replacePane.replacementField?.stringValue = settings.lastReplacement
-            dirPane.replacementField?.stringValue = settings.lastReplacement
         }
     }
 
@@ -240,36 +325,13 @@ final class FindWindowController: NSObject, NSWindowDelegate {
             .trimmingCharacters(in: .whitespacesAndNewlines)
         let usable = !selected.isEmpty && !selected.contains("\n") && selected.count <= 300
         let text = usable ? selected : settings.lastQuery
-        let panes: [FindPaneBase] = [findPane, replacePane, dirPane, markPane]
+        let panes: [FindPaneBase] = [findPane, replacePane, markPane]
         for pane in panes {
             pane.searchField.stringValue = text
         }
         if !settings.lastReplacement.isEmpty {
             replacePane.replacementField?.stringValue = settings.lastReplacement
-            dirPane.replacementField?.stringValue = settings.lastReplacement
         }
-    }
-
-    // MARK: - Transparency
-
-    func applyOpacity() {
-        guard settings.opacityEnabled else {
-            panel.alphaValue = 1
-            return
-        }
-        if settings.opacityAlways {
-            panel.alphaValue = settings.opacity
-        } else {
-            panel.alphaValue = panel.isKeyWindow ? 1 : settings.opacity
-        }
-    }
-
-    func windowDidBecomeKey(_ notification: Notification) {
-        applyOpacity()
-    }
-
-    func windowDidResignKey(_ notification: Notification) {
-        applyOpacity()
     }
 
     // MARK: - Status
@@ -325,7 +387,7 @@ final class FindWindowController: NSObject, NSWindowDelegate {
     }
 
     func reloadHistories() {
-        for tab in [FindTab.find, .replace, .directory, .mark] {
+        for tab in [FindTab.find, .replace, .mark] {
             pane(for: tab)?.reloadHistory()
         }
     }
@@ -742,178 +804,6 @@ final class FindWindowController: NSObject, NSWindowDelegate {
         clearMarks(all: true, colorIndex: settings.markColorIndex)
     }
 
-    // MARK: - Directory search
-
-    func performDirSearch(replace: Bool) {
-        guard !dirPane.isRunning else { return }
-        guard let options = dirPane.makeOptions() else {
-            NSSound.beep()
-            setStatus("Choose a directory and enter search text first.", kind: .warning)
-            return
-        }
-        settings.recordQuery(options.query.text)
-        reloadHistories()
-
-        if replace {
-            countThenReplaceDirectory(options: options)
-        } else {
-            runDirectorySearch(options: options)
-        }
-    }
-
-    private func runDirectorySearch(options: DirSearchOptions) {
-        let finder = DirFinder()
-        dirFinder = finder
-        dirPane.setRunning(true)
-        setStatus("Scanning…", kind: .info)
-
-        let model = SearchResultsModel(querySummary: "Search “\(options.query.text)” in \(options.directory.path)",
-                                       isDirectorySearch: true)
-        resultsQuery = options.query
-        guard let host else { return }
-        let results = host.findHostResultsPanel
-        results.onJump = { [weak self] match in self?.jump(to: match) }
-        host.findHostSetResultsVisible(true)
-        results.show(model: model)
-
-        finder.search(options: options,
-                      hitLimit: Self.dirHitLimit,
-                      onProgress: { [weak self] scanned, total, hits in
-                          self?.dirPane.updateProgress(scanned: scanned, total: total, hits: hits)
-                      },
-                      onBatch: { [weak self] batch in
-                          self?.host?.findHostResultsPanel.appendDirectoryHits(batch)
-                      },
-                      completion: { [weak self] truncated, cancelled, error in
-                          guard let self else { return }
-                          self.dirFinder = nil
-                          self.dirPane.setRunning(false)
-                          if let error {
-                              NSSound.beep()
-                              self.setStatus(error, kind: .error)
-                              return
-                          }
-                          if truncated {
-                              self.setStatus("Search stopped at \(Self.dirHitLimit) matches.",
-                                             kind: .warning)
-                          } else if cancelled {
-                              self.setStatus("Search cancelled.", kind: .warning)
-                          } else {
-                              let hits = self.host?.findHostResultsPanel.hitCount ?? 0
-                              self.setStatus("Found \(hits) match\(hits == 1 ? "" : "es").", kind: .info)
-                          }
-                          self.host?.findHostResultsPanel.finishDirectorySearch()
-                      })
-    }
-
-    private func countThenReplaceDirectory(options: DirSearchOptions) {
-        let counter = DirFinder()
-        dirFinder = counter
-        dirPane.setRunning(true)
-        setStatus("Counting matches…", kind: .info)
-
-        var counted: [DirSearchHit] = []
-        counter.search(options: options,
-                       hitLimit: 10_001,
-                       onProgress: { [weak self] scanned, total, hits in
-                           self?.dirPane.updateProgress(scanned: scanned, total: total, hits: hits)
-                       },
-                       onBatch: { batch in
-                           counted.append(contentsOf: batch)
-                       },
-                       completion: { [weak self] truncated, cancelled, error in
-                           guard let self else { return }
-                           self.dirFinder = nil
-                           self.dirPane.setRunning(false)
-                           if let error {
-                               NSSound.beep()
-                               self.setStatus(error, kind: .error)
-                               return
-                           }
-                           if cancelled { return }
-                           guard !counted.isEmpty else {
-                               NSSound.beep()
-                               self.setStatus("No matches to replace.", kind: .warning)
-                               return
-                           }
-
-                           let fileURLs = Set(counted.map { $0.url })
-                           let total = counted.count
-                           var message = "Replace \(total)\(truncated ? "+" : "") occurrence\(total == 1 ? "" : "s") in \(fileURLs.count) file\(fileURLs.count == 1 ? "" : "s")?"
-                           message += "\n\nFiles are written back in their original encoding."
-                           let alert = NSAlert()
-                           alert.messageText = message
-
-                           let dirtyOpen = self.store.documents.filter { doc in
-                               guard let url = doc.url else { return false }
-                               return doc.isDirty && fileURLs.contains(url.standardizedFileURL)
-                           }
-                           if !dirtyOpen.isEmpty {
-                               let names = dirtyOpen.prefix(5).map { $0.displayName }.joined(separator: ", ")
-                               alert.informativeText = "These open files have unsaved changes: \(names). Save them before replacing?"
-                               alert.addButton(withTitle: "Save and Replace")
-                               alert.addButton(withTitle: "Cancel")
-                               guard alert.runModal() == .alertFirstButtonReturn else { return }
-                               for doc in dirtyOpen {
-                                   guard doc.save(to: doc.url) else {
-                                       NSSound.beep()
-                                       self.setStatus("Could not save \(doc.displayName); replace cancelled.", kind: .error)
-                                       return
-                                   }
-                               }
-                           } else {
-                               alert.addButton(withTitle: "Replace All")
-                               alert.addButton(withTitle: "Cancel")
-                               guard alert.runModal() == .alertFirstButtonReturn else { return }
-                           }
-
-                           self.runDirectoryReplace(options: options)
-                       })
-    }
-
-    private func runDirectoryReplace(options: DirSearchOptions) {
-        let replacer = DirFinder()
-        dirFinder = replacer
-        dirPane.setRunning(true)
-        setStatus("Replacing…", kind: .info)
-
-        replacer.replaceAll(options: options,
-                            onProgress: { [weak self] scanned, total in
-                                self?.dirPane.updateProgress(scanned: scanned, total: total, hits: 0)
-                            },
-                            completion: { [weak self] summary, error in
-                                guard let self else { return }
-                                self.dirFinder = nil
-                                self.dirPane.setRunning(false)
-
-                                if let error {
-                                    NSSound.beep()
-                                    self.setStatus(error, kind: .error)
-                                    return
-                                }
-
-                                // Re-sync any open documents that were rewritten.
-                                for doc in self.store.documents {
-                                    guard let url = doc.url,
-                                          url.standardizedFileURL.path.hasPrefix(options.directory.standardizedFileURL.path),
-                                          !doc.isDirty else { continue }
-                                    doc.reload(withEncoding: doc.encoding)
-                                }
-                                self.host?.findHostRefreshAll()
-
-                                var text = "Replaced \(summary.replaced) occurrence\(summary.replaced == 1 ? "" : "s") in \(summary.filesChanged) file\(summary.filesChanged == 1 ? "" : "s")."
-                                if !summary.skipped.isEmpty {
-                                    text += " Skipped \(summary.skipped.count) file\(summary.skipped.count == 1 ? "" : "s")."
-                                }
-                                self.setStatus(text, kind: summary.skipped.isEmpty ? .info : .warning)
-                            })
-    }
-
-    func cancelDirSearch() {
-        dirFinder?.cancel()
-        setStatus("Cancelling…", kind: .warning)
-    }
-
     // MARK: - Panel lifecycle
 
     func closePanel() {
@@ -936,7 +826,7 @@ final class FindWindowController: NSObject, NSWindowDelegate {
             let selected = (host?.findHostSelectedText ?? "")
                 .trimmingCharacters(in: .whitespacesAndNewlines)
             if !selected.isEmpty && !selected.contains("\n") && selected.count <= 300 {
-                let panes: [FindPaneBase] = [findPane, replacePane, dirPane, markPane]
+                let panes: [FindPaneBase] = [findPane, replacePane, markPane]
                 for pane in panes {
                     pane.searchField.stringValue = selected
                 }
@@ -971,5 +861,17 @@ private extension NSView {
     func activateIfPossible() {
         (self as? FindPaneBase)?.activate()
         (self as? SettingsPaneView)?.activate()
+    }
+}
+
+extension FindTab {
+    /// Panel content height that fits the tab without dead space.
+    var preferredContentHeight: CGFloat {
+        switch self {
+        case .find:     return 204
+        case .replace:  return 248
+        case .mark:     return 220
+        case .settings: return 288
+        }
     }
 }

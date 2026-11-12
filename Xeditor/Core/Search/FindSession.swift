@@ -1,7 +1,7 @@
 import Foundation
 
 /// Search logic shared by every pane of the Find window. All Scintilla access
-/// happens on the main actor; directory search lives in `DirFinder`.
+/// happens on the main actor.
 @MainActor
 final class FindSession {
     private let store: DocumentStore

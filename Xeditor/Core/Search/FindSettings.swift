@@ -1,17 +1,15 @@
 import AppKit
 import Foundation
 
-/// How the search text is interpreted. Mirrors notepad--'s three modes.
+/// How the search text is interpreted.
 enum SearchMode: String, CaseIterable {
     case normal
     case regex
-    case extended
 
     var title: String {
         switch self {
         case .normal:   return "Normal"
         case .regex:    return "Regular Expression"
-        case .extended: return "Extended"
         }
     }
 }
@@ -82,27 +80,6 @@ final class FindSettings {
         set { defaults.set(newValue, forKey: "find.mark.addBookmarks") }
     }
 
-    // MARK: - Window transparency
-
-    var opacityEnabled: Bool {
-        get { defaults.bool(forKey: "find.opacityEnabled") }
-        set { defaults.set(newValue, forKey: "find.opacityEnabled") }
-    }
-
-    /// true = always transparent at `opacity`; false = only while unfocused.
-    var opacityAlways: Bool {
-        get { defaults.bool(forKey: "find.opacityAlways") }
-        set { defaults.set(newValue, forKey: "find.opacityAlways") }
-    }
-
-    var opacity: Double {
-        get {
-            let value = defaults.double(forKey: "find.opacity")
-            return value > 0 ? min(1, max(0.25, value)) : 0.85
-        }
-        set { defaults.set(min(1, max(0.25, newValue)), forKey: "find.opacity") }
-    }
-
     // MARK: - Results / history preferences
 
     var historyLimit: Int {
@@ -130,65 +107,6 @@ final class FindSettings {
     var hotkeyFollowsSelection: Bool {
         get { defaults.bool(forKey: "find.hotkeyFollowsSelection") }
         set { defaults.set(newValue, forKey: "find.hotkeyFollowsSelection") }
-    }
-
-    // MARK: - Directory search
-
-    var dirPath: String {
-        get { defaults.string(forKey: "find.dir.lastPath") ?? "" }
-        set { defaults.set(newValue, forKey: "find.dir.lastPath") }
-    }
-
-    var dirFileTypes: String {
-        get { defaults.string(forKey: "find.dir.fileTypes") ?? "*.c:*.cpp:*.h" }
-        set { defaults.set(newValue, forKey: "find.dir.fileTypes") }
-    }
-
-    var dirFileNameRegex: String {
-        get { defaults.string(forKey: "find.dir.fileNameRegex") ?? "" }
-        set { defaults.set(newValue, forKey: "find.dir.fileNameRegex") }
-    }
-
-    var dirSkipFolders: String {
-        get { defaults.string(forKey: "find.dir.skipFolders") ?? "debug:Debug:.vs:.git:.svn" }
-        set { defaults.set(newValue, forKey: "find.dir.skipFolders") }
-    }
-
-    var dirSkipHidden: Bool {
-        get {
-            if defaults.object(forKey: "find.dir.skipHidden") == nil { return true }
-            return defaults.bool(forKey: "find.dir.skipHidden")
-        }
-        set { defaults.set(newValue, forKey: "find.dir.skipHidden") }
-    }
-
-    var dirSkipBinary: Bool {
-        get {
-            if defaults.object(forKey: "find.dir.skipBinary") == nil { return true }
-            return defaults.bool(forKey: "find.dir.skipBinary")
-        }
-        set { defaults.set(newValue, forKey: "find.dir.skipBinary") }
-    }
-
-    var dirSkipLarge: Bool {
-        get {
-            if defaults.object(forKey: "find.dir.skipLarge") == nil { return true }
-            return defaults.bool(forKey: "find.dir.skipLarge")
-        }
-        set { defaults.set(newValue, forKey: "find.dir.skipLarge") }
-    }
-
-    var dirMaxSizeMB: Int {
-        get {
-            let value = defaults.integer(forKey: "find.dir.maxSizeMB")
-            return value > 0 ? value : 20
-        }
-        set { defaults.set(newValue, forKey: "find.dir.maxSizeMB") }
-    }
-
-    var dirSkipSubdirectories: Bool {
-        get { defaults.bool(forKey: "find.dir.skipSubdirectories") }
-        set { defaults.set(newValue, forKey: "find.dir.skipSubdirectories") }
     }
 
     // MARK: - History

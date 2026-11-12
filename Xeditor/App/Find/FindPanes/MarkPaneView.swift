@@ -1,48 +1,84 @@
 import AppKit
 
+/// Compact colour chip; clicking one becomes the active mark colour.
+private final class MarkColorChipView: NSView {
+    var color: NSColor = .clear {
+        didSet { needsDisplay = true }
+    }
+    var isSelected = false {
+        didSet { needsDisplay = true }
+    }
+    var onSelect: (() -> Void)?
+
+    override var intrinsicContentSize: NSSize { NSSize(width: 30, height: 20) }
+
+    override func draw(_ dirtyRect: NSRect) {
+        if isSelected {
+            let ring = NSBezierPath(roundedRect: bounds.insetBy(dx: 1, dy: 1),
+                                    xRadius: 4, yRadius: 4)
+            NSColor.controlAccentColor.setStroke()
+            ring.lineWidth = 2
+            ring.stroke()
+        }
+
+        let swatch = NSBezierPath(roundedRect: bounds.insetBy(dx: 3.5, dy: 3.5),
+                                  xRadius: 3, yRadius: 3)
+        color.setFill()
+        swatch.fill()
+        NSColor.separatorColor.setStroke()
+        swatch.lineWidth = 1
+        swatch.stroke()
+    }
+
+    override func mouseDown(with event: NSEvent) {
+        onSelect?()
+    }
+
+    override func resetCursorRects() {
+        addCursorRect(bounds, cursor: .pointingHand)
+    }
+}
+
 /// Mark tab: colour the matches with one of five indicators, optionally adding
 /// a bookmark per matched line.
 final class MarkPaneView: FindPaneBase {
-    private var colorRadios: [NSButton] = []
-    private var swatches: [NSImageView] = []
+    private var chips: [MarkColorChipView] = []
 
     init(controller: FindWindowController) {
         super.init(controller: controller, showsReplacement: false, optionsVariant: .mark)
 
-        var colorRows: [NSView] = []
+        var chipViews: [NSView] = []
         let selected = FindSettings.shared.markColorIndex
         for index in 0..<5 {
-            let radio = FindUI.radio("Color \(index + 1)", target: self,
-                                     action: #selector(colorChanged(_:)),
-                                     on: index == selected)
-            radio.tag = index
-            colorRadios.append(radio)
-
-            let swatch = NSImageView()
-            swatch.imageScaling = .scaleProportionallyUpOrDown
-            swatch.widthAnchor.constraint(equalToConstant: 26).isActive = true
-            swatch.heightAnchor.constraint(equalToConstant: 16).isActive = true
-            swatches.append(swatch)
-
-            colorRows.append(FindUI.horizontal([radio, swatch], spacing: 8))
+            let chip = MarkColorChipView()
+            chip.isSelected = index == selected
+            chip.toolTip = "Color \(index + 1)"
+            chip.setAccessibilityLabel("Mark color \(index + 1)")
+            chip.setAccessibilityRole(.button)
+            chip.onSelect = { [weak self] in self?.selectColor(index) }
+            chip.widthAnchor.constraint(equalToConstant: 30).isActive = true
+            chip.heightAnchor.constraint(equalToConstant: 20).isActive = true
+            chips.append(chip)
+            chipViews.append(chip)
         }
-        let colors = FindUI.vertical(colorRows, spacing: 12)
+        let colors = FindUI.horizontal([FindUI.sectionLabel("Color")] + chipViews + [FindUI.spacer()],
+                                       spacing: 8)
 
-        let markAll = FindUI.actionButton("Mark All", target: self, action: #selector(markAll))
-        markAll.keyEquivalent = "\r"
-        let markBookmarks = FindUI.actionButton("Mark + Bookmark", target: self, action: #selector(markWithBookmarks))
-        let gap = NSView()
-        gap.heightAnchor.constraint(equalToConstant: 14).isActive = true
-        let clearOne = FindUI.actionButton("Clear This Color", target: self, action: #selector(clearThisColor))
-        let clearAll = FindUI.actionButton("Clear All Marks", target: self, action: #selector(clearAllMarks))
-        let copyMatches = FindUI.actionButton("Copy Matched Text", target: self, action: #selector(copyMatches))
-        let close = FindUI.actionButton("Close", target: self, action: #selector(closePanel))
+        let copyMatches = FindUI.footerButton("Copy Matches", target: self, action: #selector(copyMatches))
+        let clearThisColor = FindUI.footerButton("Clear This Color", target: self,
+                                                  action: #selector(clearThisColor))
+        let clearAllMarks = FindUI.footerButton("Clear All Marks", target: self,
+                                                action: #selector(clearAllMarks))
 
-        let left = FindUI.vertical([searchRow(), colors, flexibleSpacer(), optionsView], spacing: 18)
+        let markBookmarks = FindUI.footerButton("Mark + Bookmark", target: self,
+                                                action: #selector(markWithBookmarks))
+        let markAll = FindUI.footerButton("Mark All", target: self, action: #selector(markAll),
+                                          isDefault: true)
 
-        install(left: left,
-                rightViews: [markAll, markBookmarks, gap, clearOne, clearAll,
-                             copyMatches, close])
+        setFooter(leading: [copyMatches, clearThisColor, clearAllMarks],
+                  trailing: [markBookmarks, markAll])
+
+        installCard(extraRows: [colors])
         updateSwatches()
     }
 
@@ -63,27 +99,14 @@ final class MarkPaneView: FindPaneBase {
     private func updateSwatches() {
         let dark = effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
         for index in 0..<5 {
-            swatches[index].image = swatchImage(color: EditorBridge.markColor(index: index, dark: dark))
+            chips[index].color = EditorBridge.markColor(index: index, dark: dark)
         }
     }
 
-    private func swatchImage(color: NSColor) -> NSImage {
-        let size = NSSize(width: 26, height: 16)
-        return NSImage(size: size, flipped: false) { rect in
-            let path = NSBezierPath(roundedRect: rect.insetBy(dx: 1, dy: 1), xRadius: 3, yRadius: 3)
-            color.setFill()
-            path.fill()
-            NSColor.separatorColor.setStroke()
-            path.lineWidth = 1
-            path.stroke()
-            return true
-        }
-    }
-
-    @objc private func colorChanged(_ sender: NSButton) {
-        FindSettings.shared.markColorIndex = sender.tag
-        for radio in colorRadios {
-            radio.state = radio.tag == sender.tag ? .on : .off
+    private func selectColor(_ index: Int) {
+        FindSettings.shared.markColorIndex = index
+        for (chipIndex, chip) in chips.enumerated() {
+            chip.isSelected = chipIndex == index
         }
     }
 
@@ -104,5 +127,4 @@ final class MarkPaneView: FindPaneBase {
     }
 
     @objc private func copyMatches() { controller?.copyMatchedText() }
-    @objc private func closePanel() { controller?.closePanel() }
 }

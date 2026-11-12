@@ -1,12 +1,11 @@
 import AppKit
 
-/// Left-column options for every pane: the vertical option checkboxes and the
-/// "Search Mode" group box, matching notepad--'s dialog.
+/// One row of search options — the checkboxes (including Regular Expression)
+/// in one left-aligned group, matching macOS find windows.
 final class SearchOptionsView: NSView {
     enum Variant {
         case findReplace
         case mark
-        case directory
     }
 
     var onChange: (() -> Void)?
@@ -17,12 +16,27 @@ final class SearchOptionsView: NSView {
     private let caseBox: NSButton
     private let wordBox: NSButton
     private let wrapBox: NSButton?
-    private var modeButtons: [NSButton] = []
+    private let regexBox: NSButton
+    private let optionsRow = NSStackView()
+    private let row = NSStackView()
+
+    /// Optional control placed right after the Regular Expression checkbox
+    /// (regex help).
+    var trailingAccessory: NSView? {
+        didSet {
+            oldValue?.removeFromSuperview()
+            if let trailingAccessory {
+                optionsRow.setCustomSpacing(-4, after: regexBox)
+                optionsRow.addArrangedSubview(trailingAccessory)
+            }
+        }
+    }
 
     init(variant: Variant) {
         self.variant = variant
         caseBox = FindUI.checkbox("Match case", target: nil, action: nil, on: false)
         wordBox = FindUI.checkbox("Whole word", target: nil, action: nil, on: false)
+        regexBox = FindUI.checkbox("Regular Expression", target: nil, action: nil, on: false)
         if variant == .findReplace {
             backwardBox = FindUI.checkbox("Backward", target: nil, action: nil, on: false)
             wrapBox = FindUI.checkbox("Wrap around", target: nil, action: nil, on: true)
@@ -33,39 +47,36 @@ final class SearchOptionsView: NSView {
 
         super.init(frame: .zero)
 
-        var checkboxes: [NSView] = []
-        if let backwardBox { checkboxes.append(backwardBox) }
-        checkboxes.append(wordBox)
-        checkboxes.append(caseBox)
-        if let wrapBox { checkboxes.append(wrapBox) }
-
-        let optionsStack = FindUI.vertical(checkboxes, spacing: 12)
-
-        let modeViews: [NSView] = SearchMode.allCases.map { mode in
-            let button = FindUI.radio(mode.title, target: self, action: #selector(modeChanged(_:)), on: false)
-            button.tag = SearchMode.allCases.firstIndex(of: mode) ?? 0
-            if mode == .extended {
-                button.title = "Extended  (\\n, \\r, \\t, \\0, \\x…)"
-            }
-            modeButtons.append(button)
-            return button
+        var options: [NSView] = [wordBox, caseBox]
+        if let wrapBox { options.append(wrapBox) }
+        if let backwardBox { options.append(backwardBox) }
+        options.append(regexBox)
+        optionsRow.orientation = .horizontal
+        optionsRow.alignment = .centerY
+        optionsRow.spacing = 12
+        for view in options {
+            optionsRow.addArrangedSubview(view)
         }
-        let modeGroup = FindUI.group("Search Mode", modeViews, spacing: 6)
 
-        let stack = FindUI.verticalFill([optionsStack, modeGroup], spacing: 18)
-        addSubview(stack)
-        stack.translatesAutoresizingMaskIntoConstraints = false
+        row.orientation = .horizontal
+        row.alignment = .centerY
+        row.spacing = 8
+        row.addArrangedSubview(optionsRow)
+        row.addArrangedSubview(FindUI.spacer())
+        addSubview(row)
+        row.translatesAutoresizingMaskIntoConstraints = false
         NSLayoutConstraint.activate([
-            stack.topAnchor.constraint(equalTo: topAnchor),
-            stack.leadingAnchor.constraint(equalTo: leadingAnchor),
-            stack.trailingAnchor.constraint(equalTo: trailingAnchor),
-            stack.bottomAnchor.constraint(lessThanOrEqualTo: bottomAnchor)
+            row.topAnchor.constraint(equalTo: topAnchor),
+            row.leadingAnchor.constraint(equalTo: leadingAnchor),
+            row.trailingAnchor.constraint(equalTo: trailingAnchor),
+            row.bottomAnchor.constraint(equalTo: bottomAnchor)
         ])
 
-        for view in [backwardBox, caseBox, wordBox, wrapBox].compactMap({ $0 }) {
+        for view in [backwardBox, caseBox, wordBox, wrapBox, regexBox].compactMap({ $0 }) {
             view.target = self
             view.action = #selector(optionChanged)
         }
+        regexBox.action = #selector(regexChanged)
         reload()
     }
 
@@ -78,17 +89,14 @@ final class SearchOptionsView: NSView {
         caseBox.state = settings.matchCase ? .on : .off
         wordBox.state = settings.wholeWord ? .on : .off
         wrapBox?.state = settings.wrap ? .on : .off
-        for button in modeButtons {
-            button.state = button.tag == SearchMode.allCases.firstIndex(of: settings.mode) ? .on : .off
-        }
+        regexBox.state = settings.mode == .regex ? .on : .off
         // Scintilla's regex engine ignores whole-word, so leaving the box
         // enabled would silently lie.
         wordBox.isEnabled = settings.mode != .regex
     }
 
-    @objc private func modeChanged(_ sender: NSButton) {
-        guard SearchMode.allCases.indices.contains(sender.tag) else { return }
-        settings.mode = SearchMode.allCases[sender.tag]
+    @objc private func regexChanged() {
+        settings.mode = regexBox.state == .on ? .regex : .normal
         reload()
         onChange?()
     }

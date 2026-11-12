@@ -52,6 +52,7 @@ targets:
       path: Xeditor/Info.plist
       properties:
         CFBundleDisplayName: Xeditor
+        CFBundleIconFile: AppIcon
         CFBundleShortVersionString: "$(MARKETING_VERSION)"
         CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
         LSApplicationCategoryType: public.app-category.developer-tools
