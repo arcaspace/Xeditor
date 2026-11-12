@@ -51,6 +51,26 @@ final class MainViewController: NSViewController, NativeTabBarDelegate, FindHost
         // Initial tabs
         tabBar.reloadTabs(store: store)
         displayActiveDocument()
+
+        // Files dropped anywhere in the window open as tabs. Drops on the
+        // editor itself arrive through the bridge (see DocumentStore).
+        store.onFileDrop = { [weak self] urls in
+            self?.openDroppedFiles(urls)
+        }
+        (view as? AppearanceAwareView)?.onFileDrop = { [weak self] urls in
+            self?.openDroppedFiles(urls)
+        }
+    }
+
+    private func openDroppedFiles(_ urls: [URL]) {
+        let files = urls.filter { url in
+            (try? url.resourceValues(forKeys: [.isRegularFileKey]))?.isRegularFile == true
+        }
+        guard !files.isEmpty else { return }
+        for url in files {
+            _ = store.open(url: url)
+        }
+        reloadAll()
     }
 
     override func viewDidLayout() {
@@ -251,11 +271,75 @@ final class MainViewController: NSViewController, NativeTabBarDelegate, FindHost
 /// appearance. `NSColor.windowBackgroundColor.cgColor` snapshots the colour
 /// once, so it must be refreshed whenever the app theme changes.
 final class AppearanceAwareView: NSView {
+    /// Called with the regular files dropped on the window.
+    var onFileDrop: (([URL]) -> Void)?
+
+    private var isDropHighlighted = false
+
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        registerForDraggedTypes([.fileURL])
+    }
+
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
     override func viewDidChangeEffectiveAppearance() {
         super.viewDidChangeEffectiveAppearance()
         effectiveAppearance.performAsCurrentDrawingAppearance {
             layer?.backgroundColor = NSColor.windowBackgroundColor.cgColor
         }
+        updateDropHighlight()
+    }
+
+    // MARK: - File drops
+
+    override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {
+        guard !fileURLs(from: sender).isEmpty else { return [] }
+        setDropHighlighted(true)
+        return .copy
+    }
+
+    override func draggingUpdated(_ sender: NSDraggingInfo) -> NSDragOperation {
+        fileURLs(from: sender).isEmpty ? [] : .copy
+    }
+
+    override func draggingExited(_ sender: NSDraggingInfo?) {
+        setDropHighlighted(false)
+    }
+
+    override func draggingEnded(_ sender: NSDraggingInfo) {
+        setDropHighlighted(false)
+    }
+
+    override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
+        setDropHighlighted(false)
+        let urls = fileURLs(from: sender)
+        guard !urls.isEmpty else { return false }
+        onFileDrop?(urls)
+        return true
+    }
+
+    private func fileURLs(from info: NSDraggingInfo) -> [URL] {
+        let options: [NSPasteboard.ReadingOptionKey: Any] = [.urlReadingFileURLsOnly: true]
+        let items = info.draggingPasteboard.readObjects(forClasses: [NSURL.self],
+                                                        options: options) as? [URL] ?? []
+        return items.filter { url in
+            (try? url.resourceValues(forKeys: [.isRegularFileKey]))?.isRegularFile == true
+        }
+    }
+
+    private func setDropHighlighted(_ highlighted: Bool) {
+        guard isDropHighlighted != highlighted else { return }
+        isDropHighlighted = highlighted
+        updateDropHighlight()
+    }
+
+    private func updateDropHighlight() {
+        wantsLayer = true
+        layer?.borderWidth = isDropHighlighted ? 2 : 0
+        layer?.borderColor = NSColor.controlAccentColor.cgColor
     }
 }
 

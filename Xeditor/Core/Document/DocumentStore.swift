@@ -6,19 +6,34 @@ final class DocumentStore: ObservableObject {
     @Published private(set) var documents: [EditorDocument] = []
     @Published var activeID: EditorDocument.ID?
 
+    /// Called when files are dropped onto any editor; the window opens them.
+    var onFileDrop: (([URL]) -> Void)?
+
     var activeDocument: EditorDocument? {
         documents.first { $0.id == activeID }
     }
 
     init() {
         let document = EditorDocument()
+        wireFileDrops(document)
         documents = [document]
         activeID = document.id
+    }
+
+    /// Scintilla consumes file drags on its own view, so drops are routed back
+    /// through the document's bridge rather than a drop target view.
+    private func wireFileDrops(_ document: EditorDocument) {
+        document.editor.fileDropHandler = { [weak self] urls in
+            DispatchQueue.main.async {
+                self?.onFileDrop?(urls)
+            }
+        }
     }
 
     @discardableResult
     func newDocument() -> EditorDocument {
         let document = EditorDocument()
+        wireFileDrops(document)
         documents.append(document)
         activeID = document.id
         return document
@@ -33,6 +48,7 @@ final class DocumentStore: ObservableObject {
         }
 
         let document = EditorDocument(url: url)
+        wireFileDrops(document)
         if documents.count == 1,
            let placeholder = documents.first,
            placeholder.url == nil,

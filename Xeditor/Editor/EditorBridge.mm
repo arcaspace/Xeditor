@@ -1389,6 +1389,16 @@ static NSStringEncoding detectEncoding(NSData *data) {
         case SCN_CHARADDED:
             [self handleAutoIndent:notification->ch];
             break;
+        case SCN_URIDROPPED: {
+            // Scintilla reports one notification per dropped file.
+            if (self.fileDropHandler && notification->text != NULL) {
+                NSString *path = [NSString stringWithUTF8String:notification->text];
+                if (path.length > 0) {
+                    self.fileDropHandler(@[[NSURL fileURLWithPath:path]]);
+                }
+            }
+            break;
+        }
         case SCN_MARGINCLICK:
             if (notification->margin == 1) {
                 sptr_t line = [self.sci message:SCI_LINEFROMPOSITION wParam:notification->position lParam:0];

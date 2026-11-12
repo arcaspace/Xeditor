@@ -74,6 +74,10 @@ typedef NS_ENUM(NSInteger, XEditorFindStatus) {
 @property (nonatomic, copy, nullable) void (^changeHandler)(BOOL isDirty);
 /// Called on the main thread after text is inserted or deleted.
 @property (nonatomic, copy, nullable) void (^contentChangeHandler)(void);
+/// Called on the main thread when files are dropped onto the editor. The
+/// editor consumes file drags itself, so the open is routed back through this
+/// handler instead of being handled by a drop target view.
+@property (nonatomic, copy, nullable) void (^fileDropHandler)(NSArray<NSURL *> *urls);
 
 @property (nonatomic, readonly, getter=isDirty) BOOL dirty;
 
