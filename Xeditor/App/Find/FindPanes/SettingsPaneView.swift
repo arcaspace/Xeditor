@@ -37,33 +37,33 @@ final class SettingsPaneView: NSView, NSTextFieldDelegate {
         historyStepper.action = #selector(historyStepperChanged)
 
         let clearHistory = FindUI.button("Clear History", target: self, action: #selector(clearHistory))
-        let historyRow = FindUI.horizontal([FindUI.label("Max items:"),
+        clearHistory.controlSize = .small
+        clearHistory.font = .systemFont(ofSize: 11)
+        let historyRow = FindUI.horizontal([FindUI.inlineLabel("Max items:"),
                                             historyField, historyStepper,
-                                            FindUI.spacer()], spacing: 8)
-        let historyGroup = FindUI.group("Search history",
-                                        [historyRow,
-                                         FindUI.horizontal([clearHistory, FindUI.spacer()], spacing: 8)],
-                                        spacing: 10)
+                                            FindUI.spacer(), clearHistory], spacing: 8)
 
         for radio in [followSearchRadio, followSelectionRadio] {
             radio.target = self
             radio.action = #selector(hotkeyModeChanged)
+            radio.font = .systemFont(ofSize: 11)
+            radio.controlSize = .small
         }
-        let hotkeyGroup = FindUI.group("⌘G behavior",
-                                       [followSearchRadio, followSelectionRadio],
-                                       spacing: 10)
+        let radios = FindUI.verticalFill([followSearchRadio, followSelectionRadio], spacing: 8)
 
-        let stack = FindUI.vertical([historyGroup, hotkeyGroup],
-                                    spacing: 14)
+        let stack = FindUI.verticalFill([FindUI.sectionHeader("Search History"), FindUI.rule(),
+                                         historyRow,
+                                         FindUI.sectionHeader("⌘G Behavior"), FindUI.rule(),
+                                         radios],
+                                        spacing: 8)
+        stack.setCustomSpacing(16, after: historyRow)
         addSubview(stack)
         stack.translatesAutoresizingMaskIntoConstraints = false
         NSLayoutConstraint.activate([
-            stack.topAnchor.constraint(equalTo: topAnchor, constant: 14),
+            stack.topAnchor.constraint(equalTo: topAnchor),
             stack.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 16),
             stack.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -16),
-            stack.bottomAnchor.constraint(lessThanOrEqualTo: bottomAnchor, constant: -12),
-            historyGroup.widthAnchor.constraint(equalTo: stack.widthAnchor),
-            hotkeyGroup.widthAnchor.constraint(equalTo: stack.widthAnchor)
+            stack.bottomAnchor.constraint(lessThanOrEqualTo: bottomAnchor, constant: -12)
         ])
 
         reload()

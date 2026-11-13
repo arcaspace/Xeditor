@@ -10,7 +10,7 @@ private final class MarkColorChipView: NSView {
     }
     var onSelect: (() -> Void)?
 
-    override var intrinsicContentSize: NSSize { NSSize(width: 30, height: 20) }
+    override var intrinsicContentSize: NSSize { NSSize(width: 26, height: 18) }
 
     override func draw(_ dirtyRect: NSRect) {
         if isSelected {
@@ -56,24 +56,28 @@ final class MarkPaneView: FindPaneBase {
             chip.setAccessibilityLabel("Mark color \(index + 1)")
             chip.setAccessibilityRole(.button)
             chip.onSelect = { [weak self] in self?.selectColor(index) }
-            chip.widthAnchor.constraint(equalToConstant: 30).isActive = true
-            chip.heightAnchor.constraint(equalToConstant: 20).isActive = true
+            chip.widthAnchor.constraint(equalToConstant: 26).isActive = true
+            chip.heightAnchor.constraint(equalToConstant: 18).isActive = true
             chips.append(chip)
             chipViews.append(chip)
         }
-        let colors = FindUI.horizontal([FindUI.sectionLabel("Color")] + chipViews + [FindUI.spacer()],
+        let colors = FindUI.horizontal([FindUI.inlineLabel("Color")] + chipViews + [FindUI.spacer()],
                                        spacing: 8)
 
-        let copyMatches = FindUI.footerButton("Copy Matches", target: self, action: #selector(copyMatches))
-        let clearThisColor = FindUI.footerButton("Clear This Color", target: self,
-                                                  action: #selector(clearThisColor))
-        let clearAllMarks = FindUI.footerButton("Clear All Marks", target: self,
-                                                action: #selector(clearAllMarks))
+        let copyMatches = FindUI.footerButton("Copy Matches", target: self, action: #selector(copyMatches),
+                                              toolTip: "Copy all matched text to the clipboard")
+        let clearThisColor = FindUI.footerButton("Clear Color", target: self,
+                                                 action: #selector(clearThisColor),
+                                                 toolTip: "Remove marks of the selected color")
+        let clearAllMarks = FindUI.footerButton("Clear All", target: self,
+                                                action: #selector(clearAllMarks),
+                                                toolTip: "Remove all marks")
 
         let markBookmarks = FindUI.footerButton("Mark + Bookmark", target: self,
-                                                action: #selector(markWithBookmarks))
+                                                action: #selector(markWithBookmarks),
+                                                toolTip: "Mark all matches and add bookmarks on their lines")
         let markAll = FindUI.footerButton("Mark All", target: self, action: #selector(markAll),
-                                          isDefault: true)
+                                          isDefault: true, toolTip: "Mark all matches")
 
         setFooter(leading: [copyMatches, clearThisColor, clearAllMarks],
                   trailing: [markBookmarks, markAll])

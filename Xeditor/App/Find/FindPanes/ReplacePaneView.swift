@@ -6,17 +6,21 @@ final class ReplacePaneView: FindPaneBase {
     init(controller: FindWindowController) {
         super.init(controller: controller, showsReplacement: true, optionsVariant: .findReplace)
 
-        let replaceSelection = FindUI.footerButton("Replace in Selection", target: self,
-                                                   action: #selector(replaceInSelection))
-        let replaceHere = FindUI.footerButton("Replace in Current File", target: self,
-                                              action: #selector(replaceAllHere))
-        let replaceOpen = FindUI.footerButton("Replace All in Open Documents", target: self,
-                                              action: #selector(replaceAllOpen))
-        let next = FindUI.footerButton("Find Next", target: self, action: #selector(findNext))
+        let replaceSelection = FindUI.footerButton("Selection", target: self,
+                                                   action: #selector(replaceInSelection),
+                                                   toolTip: "Replace all matches in the selection")
+        let replaceHere = FindUI.footerButton("Current File", target: self,
+                                              action: #selector(replaceAllHere),
+                                              toolTip: "Replace all matches in the current file")
+        let replaceOpen = FindUI.footerButton("Open Files", target: self,
+                                              action: #selector(replaceAllOpen),
+                                              toolTip: "Replace all matches in all open documents")
+        let next = FindUI.footerButton("Find Next", target: self, action: #selector(findNext),
+                                       toolTip: "Find the next match")
         let replace = FindUI.footerButton("Replace", target: self, action: #selector(replaceCurrent),
-                                          isDefault: true)
+                                          isDefault: true, toolTip: "Replace the current match")
 
-        setFooter(leading: [replaceSelection, replaceHere, replaceOpen],
+        setFooter(leading: [FindUI.inlineLabel("Replace All in"), replaceSelection, replaceHere, replaceOpen],
                   trailing: [next, replace])
 
         installCard()

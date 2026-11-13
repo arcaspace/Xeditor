@@ -71,14 +71,43 @@ enum FindUI {
     static func footerButton(_ title: String,
                              target: AnyObject?,
                              action: Selector,
-                             isDefault: Bool = false) -> NSButton {
+                             isDefault: Bool = false,
+                             toolTip: String? = nil) -> NSButton {
         let button = NSButton(title: title, target: target, action: action)
         button.bezelStyle = .rounded
         button.controlSize = .small
-        button.font = .systemFont(ofSize: 12)
+        button.font = .systemFont(ofSize: 11)
         if isDefault { button.keyEquivalent = defaultButtonKey }
+        if let toolTip {
+            button.toolTip = toolTip
+            button.setAccessibilityLabel(toolTip)
+        }
         button.setContentHuggingPriority(.required, for: .horizontal)
         return button
+    }
+
+    /// Small secondary caption used in the footer ("Find All in").
+    static func inlineLabel(_ text: String) -> NSTextField {
+        let label = NSTextField(labelWithString: text)
+        label.font = .systemFont(ofSize: 11)
+        label.textColor = .secondaryLabelColor
+        label.setContentHuggingPriority(.required, for: .horizontal)
+        return label
+    }
+
+    /// Settings section heading (12pt semibold).
+    static func sectionHeader(_ text: String) -> NSTextField {
+        let label = NSTextField(labelWithString: text)
+        label.font = .systemFont(ofSize: 12, weight: .semibold)
+        label.textColor = .labelColor
+        return label
+    }
+
+    /// 1pt hairline separator.
+    static func rule() -> NSBox {
+        let box = NSBox()
+        box.boxType = .separator
+        return box
     }
 
     /// Pull-down menu button (e.g. "All Find ▾"). The first menu item is the
@@ -158,28 +187,6 @@ enum FindUI {
         let stack = horizontal([title, control])
         control.setContentHuggingPriority(.defaultLow, for: .horizontal)
         return stack
-    }
-
-    /// Group box with a title, like the "Search Mode" box in notepad--.
-    static func group(_ title: String, _ views: [NSView], spacing: CGFloat = 8) -> NSBox {
-        let box = NSBox()
-        box.title = title
-        box.titleFont = .systemFont(ofSize: 12, weight: .medium)
-        box.titlePosition = .atTop
-        box.boxType = .primary
-
-        let stack = vertical(views, spacing: spacing)
-        box.contentView?.addSubview(stack)
-        stack.translatesAutoresizingMaskIntoConstraints = false
-        if let content = box.contentView {
-            NSLayoutConstraint.activate([
-                stack.topAnchor.constraint(equalTo: content.topAnchor, constant: 8),
-                stack.leadingAnchor.constraint(equalTo: content.leadingAnchor, constant: 10),
-                stack.trailingAnchor.constraint(lessThanOrEqualTo: content.trailingAnchor, constant: -10),
-                stack.bottomAnchor.constraint(equalTo: content.bottomAnchor, constant: -8)
-            ])
-        }
-        return box
     }
 
     /// Horizontal spacer for footers.

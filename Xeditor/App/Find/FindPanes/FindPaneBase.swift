@@ -47,15 +47,15 @@ final class FindFieldBox: NSView {
             view.translatesAutoresizingMaskIntoConstraints = false
         }
         NSLayoutConstraint.activate([
-            heightAnchor.constraint(equalToConstant: 34),
-            iconView.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 11),
+            heightAnchor.constraint(equalToConstant: 30),
+            iconView.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 10),
             iconView.centerYAnchor.constraint(equalTo: centerYAnchor),
-            iconView.widthAnchor.constraint(equalToConstant: 15),
-            iconView.heightAnchor.constraint(equalToConstant: 15),
+            iconView.widthAnchor.constraint(equalToConstant: 13),
+            iconView.heightAnchor.constraint(equalToConstant: 13),
 
-            historyButton.leadingAnchor.constraint(equalTo: iconView.trailingAnchor, constant: 6),
+            historyButton.leadingAnchor.constraint(equalTo: iconView.trailingAnchor, constant: 4),
             historyButton.centerYAnchor.constraint(equalTo: centerYAnchor),
-            historyButton.widthAnchor.constraint(equalToConstant: 14),
+            historyButton.widthAnchor.constraint(equalToConstant: 10),
 
             textField.leadingAnchor.constraint(equalTo: historyButton.trailingAnchor, constant: 6),
             textField.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -10),
@@ -76,34 +76,21 @@ final class FindFieldBox: NSView {
         if let editor = textField.currentEditor(), window?.firstResponder === editor {
             isFocused = true
         }
-        let focused = isFocused
-        let path = NSBezierPath(roundedRect: bounds.insetBy(dx: focused ? 1.5 : 1,
-                                                           dy: focused ? 1.5 : 1),
-                                xRadius: 6, yRadius: 6)
-        fillColor.setFill()
-        path.fill()
-        if focused {
+        let body = NSBezierPath(roundedRect: bounds.insetBy(dx: 0.5, dy: 0.5), xRadius: 6, yRadius: 6)
+        NSColor.controlBackgroundColor.setFill()
+        body.fill()
+        if isFocused {
+            // 3pt soft halo kept inside the bounds, then the 1pt accent edge.
+            let halo = NSBezierPath(roundedRect: bounds.insetBy(dx: 1.5, dy: 1.5), xRadius: 6, yRadius: 6)
+            NSColor.controlAccentColor.withAlphaComponent(0.30).setStroke()
+            halo.lineWidth = 3
+            halo.stroke()
             NSColor.controlAccentColor.setStroke()
-            path.lineWidth = 2
         } else {
-            borderColor.setStroke()
-            path.lineWidth = 1
+            NSColor.separatorColor.setStroke()
         }
-        path.stroke()
-    }
-
-    private var fillColor: NSColor {
-        if effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua {
-            return NSColor(calibratedWhite: 0.12, alpha: 1)
-        }
-        return NSColor.textBackgroundColor
-    }
-
-    private var borderColor: NSColor {
-        if effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua {
-            return NSColor(calibratedWhite: 0.42, alpha: 0.8)
-        }
-        return NSColor(calibratedWhite: 0.8, alpha: 1)
+        body.lineWidth = 1
+        body.stroke()
     }
 
     override func mouseDown(with event: NSEvent) {
@@ -219,7 +206,7 @@ class FindPaneBase: NSView, NSTextFieldDelegate {
         container.addSubview(stack)
         stack.translatesAutoresizingMaskIntoConstraints = false
         NSLayoutConstraint.activate([
-            stack.topAnchor.constraint(equalTo: container.topAnchor, constant: 8),
+            stack.topAnchor.constraint(equalTo: container.topAnchor),
             stack.leadingAnchor.constraint(equalTo: container.leadingAnchor),
             stack.trailingAnchor.constraint(equalTo: container.trailingAnchor),
             stack.bottomAnchor.constraint(equalTo: container.bottomAnchor)

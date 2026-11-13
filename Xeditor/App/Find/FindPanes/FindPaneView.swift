@@ -6,16 +6,21 @@ final class FindPaneView: FindPaneBase {
     init(controller: FindWindowController) {
         super.init(controller: controller, showsReplacement: false, optionsVariant: .findReplace)
 
-        let findAllCurrent = FindUI.footerButton("Find in Current File", target: self,
-                                                 action: #selector(findAllCurrent))
-        let findAllOpen = FindUI.footerButton("Find All in Open Documents", target: self,
-                                              action: #selector(findAllOpen))
-        let count = FindUI.footerButton("Count", target: self, action: #selector(countMatches))
+        let findAllCurrent = FindUI.footerButton("Current File", target: self,
+                                                 action: #selector(findAllCurrent),
+                                                 toolTip: "Find all matches in the current file")
+        let findAllOpen = FindUI.footerButton("Open Files", target: self,
+                                              action: #selector(findAllOpen),
+                                              toolTip: "Find all matches in all open documents")
+        let count = FindUI.footerButton("Count", target: self, action: #selector(countMatches),
+                                        toolTip: "Count matches")
 
-        let previous = FindUI.footerButton("Find Previous", target: self, action: #selector(findPrevious))
-        let next = FindUI.footerButton("Find Next", target: self, action: #selector(findNext), isDefault: true)
+        let previous = FindUI.footerButton("Find Previous", target: self, action: #selector(findPrevious),
+                                           toolTip: "Find the previous match (Shift-Return)")
+        let next = FindUI.footerButton("Find Next", target: self, action: #selector(findNext),
+                                       isDefault: true, toolTip: "Find the next match (Return)")
 
-        setFooter(leading: [findAllCurrent, findAllOpen, count],
+        setFooter(leading: [FindUI.inlineLabel("Find All in"), findAllCurrent, findAllOpen, count],
                   trailing: [previous, next])
 
         installCard()

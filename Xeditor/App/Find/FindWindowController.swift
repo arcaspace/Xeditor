@@ -58,6 +58,7 @@ final class FindWindowController: NSObject, NSWindowDelegate {
     private let paneContainer = NSView()
     private let statusLabel = NSTextField(labelWithString: "")
     private let footerBar = NSView()
+    private let footerRule = FindUI.rule()
     private var footerStack: NSStackView?
     private var footerHeightConstraint: NSLayoutConstraint!
     private var paneConstraints: [FindTab: [NSLayoutConstraint]] = [:]
@@ -78,8 +79,8 @@ final class FindWindowController: NSObject, NSWindowDelegate {
         self.store = store
         self.session = FindSession(store: store)
         self.host = host
-        self.panel = FindPanel(contentRect: NSRect(x: 0, y: 0, width: 620, height: 260),
-                               styleMask: [.titled, .closable, .resizable],
+        self.panel = FindPanel(contentRect: NSRect(x: 0, y: 0, width: 540, height: 178),
+                               styleMask: [.titled, .closable],
                                backing: .buffered,
                                defer: false)
         self.tabControl = NSSegmentedControl(labels: FindTab.allCases.map { $0.title },
@@ -95,7 +96,7 @@ final class FindWindowController: NSObject, NSWindowDelegate {
         panel.tabbingMode = .disallowed
         panel.delegate = self
         panel.onCancel = { [weak self] in self?.closePanel() }
-        panel.setFrameAutosaveName("XeditorFindWindow.v3")
+        panel.setFrameAutosaveName("XeditorFindWindow.v4")
         panel.contentMinSize = NSSize(width: 540, height: 160)
 
         findPane = FindPaneView(controller: self)
@@ -106,6 +107,7 @@ final class FindWindowController: NSObject, NSWindowDelegate {
         tabControl.target = self
         tabControl.action = #selector(tabControlChanged)
         tabControl.segmentStyle = .rounded
+        tabControl.controlSize = .small
 
         statusLabel.font = .systemFont(ofSize: 11)
         statusLabel.textColor = .secondaryLabelColor
@@ -118,7 +120,8 @@ final class FindWindowController: NSObject, NSWindowDelegate {
         content.addSubview(paneContainer)
         content.addSubview(statusLabel)
         content.addSubview(footerBar)
-        for view in [tabControl, paneContainer, statusLabel, footerBar] {
+        content.addSubview(footerRule)
+        for view in [tabControl, paneContainer, statusLabel, footerBar, footerRule] {
             view.translatesAutoresizingMaskIntoConstraints = false
         }
 
@@ -138,25 +141,30 @@ final class FindWindowController: NSObject, NSWindowDelegate {
         // panes would otherwise impose their own minimum height.
         NSLayoutConstraint.deactivate(paneConstraints.values.flatMap { $0 })
 
-        footerHeightConstraint = footerBar.heightAnchor.constraint(equalToConstant: 44)
+        footerHeightConstraint = footerBar.heightAnchor.constraint(equalToConstant: 40)
         NSLayoutConstraint.activate([
-            tabControl.topAnchor.constraint(equalTo: content.topAnchor, constant: 14),
+            tabControl.topAnchor.constraint(equalTo: content.topAnchor, constant: 12),
             tabControl.centerXAnchor.constraint(equalTo: content.centerXAnchor),
 
-            paneContainer.topAnchor.constraint(equalTo: tabControl.bottomAnchor, constant: 10),
+            paneContainer.topAnchor.constraint(equalTo: tabControl.bottomAnchor, constant: 12),
             paneContainer.leadingAnchor.constraint(equalTo: content.leadingAnchor),
             paneContainer.trailingAnchor.constraint(equalTo: content.trailingAnchor),
             paneContainer.bottomAnchor.constraint(equalTo: statusLabel.topAnchor, constant: -4),
 
             statusLabel.leadingAnchor.constraint(equalTo: content.leadingAnchor, constant: 16),
             statusLabel.trailingAnchor.constraint(equalTo: content.trailingAnchor, constant: -16),
-            statusLabel.heightAnchor.constraint(equalToConstant: 16),
+            statusLabel.heightAnchor.constraint(equalToConstant: 14),
             statusLabel.bottomAnchor.constraint(equalTo: footerBar.topAnchor, constant: -4),
 
             footerBar.leadingAnchor.constraint(equalTo: content.leadingAnchor),
             footerBar.trailingAnchor.constraint(equalTo: content.trailingAnchor),
             footerBar.bottomAnchor.constraint(equalTo: content.bottomAnchor),
-            footerHeightConstraint
+            footerHeightConstraint,
+
+            footerRule.leadingAnchor.constraint(equalTo: content.leadingAnchor),
+            footerRule.trailingAnchor.constraint(equalTo: content.trailingAnchor),
+            footerRule.topAnchor.constraint(equalTo: footerBar.topAnchor),
+            footerRule.heightAnchor.constraint(equalToConstant: 1)
         ])
 
         loadLastText()
@@ -205,7 +213,7 @@ final class FindWindowController: NSObject, NSWindowDelegate {
         selectTab(rawValue: tab.rawValue, activate: false)
         if !wasVisible {
             prefillFromSelectionOrHistory()
-            if !panel.setFrameUsingName("XeditorFindWindow.v3") {
+            if !panel.setFrameUsingName("XeditorFindWindow.v4") {
                 panel.center()
             }
             panel.makeKeyAndOrderFront(nil)
@@ -264,13 +272,15 @@ final class FindWindowController: NSObject, NSWindowDelegate {
             leading = []
             trailing = []
         }
-        guard !leading.isEmpty || !trailing.isEmpty else {
+        let hasFooter = !leading.isEmpty || !trailing.isEmpty
+        footerRule.isHidden = !hasFooter
+        guard hasFooter else {
             footerHeightConstraint.constant = 0
             footerStack = nil
             return
         }
 
-        footerHeightConstraint.constant = 44
+        footerHeightConstraint.constant = 40
         let stack = NSStackView(views: leading + [FindUI.spacer()] + trailing)
         stack.orientation = .horizontal
         stack.spacing = 8
@@ -868,10 +878,10 @@ extension FindTab {
     /// Panel content height that fits the tab without dead space.
     var preferredContentHeight: CGFloat {
         switch self {
-        case .find:     return 204
-        case .replace:  return 248
-        case .mark:     return 220
-        case .settings: return 288
+        case .find:     return 158
+        case .replace:  return 198
+        case .mark:     return 188
+        case .settings: return 208
         }
     }
 }

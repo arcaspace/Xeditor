@@ -19,6 +19,7 @@ final class SearchOptionsView: NSView {
     private let regexBox: NSButton
     private let optionsRow = NSStackView()
     private let row = NSStackView()
+    private let navRow = NSStackView()
 
     /// Optional control placed right after the Regular Expression checkbox
     /// (regex help).
@@ -26,7 +27,7 @@ final class SearchOptionsView: NSView {
         didSet {
             oldValue?.removeFromSuperview()
             if let trailingAccessory {
-                optionsRow.setCustomSpacing(-4, after: regexBox)
+                optionsRow.setCustomSpacing(2, after: regexBox)
                 optionsRow.addArrangedSubview(trailingAccessory)
             }
         }
@@ -47,15 +48,20 @@ final class SearchOptionsView: NSView {
 
         super.init(frame: .zero)
 
-        var options: [NSView] = [wordBox, caseBox]
-        if let wrapBox { options.append(wrapBox) }
-        if let backwardBox { options.append(backwardBox) }
-        options.append(regexBox)
-        optionsRow.orientation = .horizontal
-        optionsRow.alignment = .centerY
-        optionsRow.spacing = 12
-        for view in options {
-            optionsRow.addArrangedSubview(view)
+        for box in [caseBox, wordBox, regexBox, backwardBox, wrapBox].compactMap({ $0 }) {
+            box.font = .systemFont(ofSize: 11)
+            box.controlSize = .small
+        }
+        // Left: what gets matched. Right: how the search navigates.
+        let matchOptions: [NSView] = [caseBox, wordBox, regexBox]
+        let navOptions: [NSView] = [wrapBox, backwardBox].compactMap { $0 }
+        for (stack, views) in [(optionsRow, matchOptions), (navRow, navOptions)] {
+            stack.orientation = .horizontal
+            stack.alignment = .centerY
+            stack.spacing = 10
+            for view in views {
+                stack.addArrangedSubview(view)
+            }
         }
 
         row.orientation = .horizontal
@@ -63,6 +69,9 @@ final class SearchOptionsView: NSView {
         row.spacing = 8
         row.addArrangedSubview(optionsRow)
         row.addArrangedSubview(FindUI.spacer())
+        if !navOptions.isEmpty {
+            row.addArrangedSubview(navRow)
+        }
         addSubview(row)
         row.translatesAutoresizingMaskIntoConstraints = false
         NSLayoutConstraint.activate([
