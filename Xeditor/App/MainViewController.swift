@@ -186,11 +186,11 @@ final class MainViewController: NSViewController, NativeTabBarDelegate, FindHost
     func closeDocumentWithConfirmation(_ document: EditorDocument) {
         if document.isDirty {
             let alert = NSAlert()
-            alert.messageText = "Do you want to save the changes made to “\(document.displayName)”?"
-            alert.informativeText = "Your changes will be lost if you don’t save them."
-            alert.addButton(withTitle: "Save")
-            alert.addButton(withTitle: "Cancel")
-            alert.addButton(withTitle: "Don’t Save")
+            alert.messageText = LF("Do you want to save the changes made to “%@”?", document.displayName)
+            alert.informativeText = L("Your changes will be lost if you don’t save them.")
+            alert.addButton(withTitle: L("Save"))
+            alert.addButton(withTitle: L("Cancel"))
+            alert.addButton(withTitle: L("Don’t Save"))
             switch alert.runModal() {
             case .alertFirstButtonReturn:
                 let ok = document.url == nil ? saveDocumentAs(document) : document.save()
@@ -208,7 +208,7 @@ final class MainViewController: NSViewController, NativeTabBarDelegate, FindHost
     @discardableResult
     func saveDocumentAs(_ document: EditorDocument) -> Bool {
         let panel = NSSavePanel()
-        panel.title = "Save File"
+        panel.title = L("Save File")
         panel.nameFieldStringValue = document.displayName
         guard panel.runModal() == .OK, let url = panel.url else { return false }
         guard document.save(to: url) else { return false }
@@ -264,6 +264,14 @@ final class MainViewController: NSViewController, NativeTabBarDelegate, FindHost
     func statusBarDidChangeEncoding(_ encoding: DocumentEncoding) {
         store.activeDocument?.reload(withEncoding: encoding)
         updateActiveDocumentContent()
+    }
+
+    // MARK: - Localization
+
+    /// Refreshes the parts of the main window that are built once at launch.
+    func applyLocalization() {
+        tabBar.applyLocalization()
+        resultsPanel.applyLocalization()
     }
 }
 

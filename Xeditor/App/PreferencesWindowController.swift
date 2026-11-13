@@ -7,6 +7,7 @@ protocol PreferencesDelegate: AnyObject {
 final class PreferencesWindowController: NSWindowController {
     weak var delegate: PreferencesDelegate?
 
+    private let languagePopUp = NSPopUpButton()
     private let themePopUp = NSPopUpButton()
     private let fontPopUp = NSPopUpButton()
     private let fontSizeSlider = NSSlider()
@@ -22,12 +23,12 @@ final class PreferencesWindowController: NSWindowController {
     init(delegate: PreferencesDelegate?) {
         self.delegate = delegate
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 380, height: 390),
+            contentRect: NSRect(x: 0, y: 0, width: 380, height: 460),
             styleMask: [.titled, .closable],
             backing: .buffered,
             defer: false
         )
-        window.title = "Preferences"
+        window.title = L("Preferences")
         window.isReleasedWhenClosed = false
         super.init(window: window)
 
@@ -42,14 +43,31 @@ final class PreferencesWindowController: NSWindowController {
     private func setupUI() {
         guard let contentView = window?.contentView else { return }
 
-        var y: CGFloat = 340
+        var y: CGFloat = 410
+
+        // ── Language Section ──
+        let languageTitle = sectionLabel(L("Language"))
+        languageTitle.frame = NSRect(x: 20, y: y, width: 340, height: 18)
+        contentView.addSubview(languageTitle)
+        y -= 30
+
+        // The popup always lists languages in their own script so they can be
+        // found regardless of the current UI language.
+        languagePopUp.removeAllItems()
+        languagePopUp.addItems(withTitles: AppLanguage.allCases.map(\.nativeName))
+        languagePopUp.target = self
+        languagePopUp.action = #selector(onLanguageChanged)
+        languagePopUp.frame = NSRect(x: 20, y: y, width: 220, height: 24)
+        contentView.addSubview(languagePopUp)
+        y -= 40
 
         // ── Theme Section ──
-        let themeTitle = sectionLabel("Theme")
+        let themeTitle = sectionLabel(L("Theme"))
         themeTitle.frame = NSRect(x: 20, y: y, width: 340, height: 18)
         contentView.addSubview(themeTitle)
         y -= 30
 
+        themePopUp.removeAllItems()
         themePopUp.addItems(withTitles: EditorTheme.allCases.map(\.title))
         themePopUp.target = self
         themePopUp.action = #selector(onSettingChanged)
@@ -58,12 +76,13 @@ final class PreferencesWindowController: NSWindowController {
         y -= 40
 
         // ── Font Section ──
-        let fontTitle = sectionLabel("Editor Font")
+        let fontTitle = sectionLabel(L("Editor Font"))
         fontTitle.frame = NSRect(x: 20, y: y, width: 340, height: 18)
         contentView.addSubview(fontTitle)
         y -= 30
 
         let fontFamilies = availableMonospacedFonts()
+        fontPopUp.removeAllItems()
         fontPopUp.addItems(withTitles: fontFamilies)
         fontPopUp.target = self
         fontPopUp.action = #selector(onSettingChanged)
@@ -82,12 +101,12 @@ final class PreferencesWindowController: NSWindowController {
         y -= 40
 
         // ── Tabs & Indent Section ──
-        let indentTitle = sectionLabel("Tabs & Indentation")
+        let indentTitle = sectionLabel(L("Tabs & Indentation"))
         indentTitle.frame = NSRect(x: 20, y: y, width: 340, height: 18)
         contentView.addSubview(indentTitle)
         y -= 28
 
-        let tabWidthText = NSTextField(labelWithString: "Tab Width:")
+        let tabWidthText = NSTextField(labelWithString: L("Tab Width:"))
         tabWidthText.frame = NSRect(x: 20, y: y, width: 80, height: 18)
         contentView.addSubview(tabWidthText)
 
@@ -102,22 +121,22 @@ final class PreferencesWindowController: NSWindowController {
         contentView.addSubview(tabWidthStepper)
         y -= 28
 
-        configureCheckbox(useTabsCheckbox, title: "Use tabs instead of spaces", y: y)
+        configureCheckbox(useTabsCheckbox, title: L("Use tabs instead of spaces"), y: y)
         y -= 24
-        configureCheckbox(autoIndentCheckbox, title: "Auto-indent new lines", y: y)
+        configureCheckbox(autoIndentCheckbox, title: L("Auto-indent new lines"), y: y)
         y -= 40
 
         // ── Display Section ──
-        let displayTitle = sectionLabel("Display")
+        let displayTitle = sectionLabel(L("Display"))
         displayTitle.frame = NSRect(x: 20, y: y, width: 340, height: 18)
         contentView.addSubview(displayTitle)
         y -= 28
 
-        configureCheckbox(wordWrapCheckbox, title: "Word wrap", y: y)
+        configureCheckbox(wordWrapCheckbox, title: L("Word wrap"), y: y)
         y -= 24
-        configureCheckbox(showWhitespaceCheckbox, title: "Show whitespace characters", y: y)
+        configureCheckbox(showWhitespaceCheckbox, title: L("Show whitespace characters"), y: y)
         y -= 24
-        configureCheckbox(showIndentGuidesCheckbox, title: "Show indentation guide lines", y: y)
+        configureCheckbox(showIndentGuidesCheckbox, title: L("Show indentation guide lines"), y: y)
     }
 
     private func sectionLabel(_ text: String) -> NSTextField {
@@ -158,6 +177,9 @@ final class PreferencesWindowController: NSWindowController {
 
     private func loadSettings() {
         let settings = EditorSettings.shared
+        if let index = AppLanguage.allCases.firstIndex(of: Localization.shared.language) {
+            languagePopUp.selectItem(at: index)
+        }
         themePopUp.selectItem(withTitle: settings.theme.title)
         if fontPopUp.indexOfItem(withTitle: settings.fontName) >= 0 {
             fontPopUp.selectItem(withTitle: settings.fontName)
@@ -177,6 +199,26 @@ final class PreferencesWindowController: NSWindowController {
         wordWrapCheckbox.state = settings.wordWrap ? .on : .off
         showWhitespaceCheckbox.state = settings.showWhitespace ? .on : .off
         showIndentGuidesCheckbox.state = settings.showIndentGuides ? .on : .off
+    }
+
+    /// Rebuilds every label after a language switch. The window is small and
+    /// laid out with fixed frames, so recreating the content is simpler and
+    /// safer than tracking each label individually.
+    func applyLocalization() {
+        window?.title = L("Preferences")
+        for subview in window?.contentView?.subviews ?? [] {
+            subview.removeFromSuperview()
+        }
+        setupUI()
+        loadSettings()
+    }
+
+    @objc private func onLanguageChanged() {
+        let index = languagePopUp.indexOfSelectedItem
+        guard AppLanguage.allCases.indices.contains(index) else { return }
+        Localization.shared.language = AppLanguage.allCases[index]
+        applyLocalization()
+        delegate?.preferencesDidChange()
     }
 
     @objc private func onFontSizeSliderChanged() {

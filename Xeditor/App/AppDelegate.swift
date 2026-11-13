@@ -25,6 +25,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, PreferencesDelegate, G
         // Build Menu Bar
         buildMainMenu()
 
+        // Rebuild the chrome when the UI language changes in Preferences.
+        NotificationCenter.default.addObserver(self,
+                                               selector: #selector(languageDidChange),
+                                               name: Localization.didChangeNotification,
+                                               object: nil)
+
         // Create main window controller
         let wc = MainWindowController(store: store)
         windowController = wc
@@ -178,7 +184,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, PreferencesDelegate, G
         panel.canChooseFiles = true
         panel.canChooseDirectories = false
         panel.allowsMultipleSelection = true
-        panel.title = "Open File"
+        panel.title = L("Open File")
         guard panel.runModal() == .OK else { return }
         for u in panel.urls {
             store.open(url: u)
@@ -281,6 +287,30 @@ final class AppDelegate: NSObject, NSApplicationDelegate, PreferencesDelegate, G
         let c = GoToLineWindowController(maxLine: active.lineCount, currentLine: active.cursorLine, delegate: self)
         goToLineController = c
         c.showWindow(nil)
+    }
+
+    /// Applies a language picked in Preferences to everything that is already
+    /// on screen. Tool windows are closed rather than rebuilt in place: they
+    /// are transient, and a fresh window picks up the new strings on open.
+    @objc private func languageDidChange() {
+        buildMainMenu()
+        windowController?.mainVC.applyLocalization()
+        findController?.applyLocalization()
+        preferencesController?.applyLocalization()
+        closeToolWindows()
+    }
+
+    private func closeToolWindows() {
+        compareToolController?.close()
+        hashToolController?.close()
+        codecToolController?.close()
+        structuredToolController?.close()
+        conversionToolController?.close()
+        compareToolController = nil
+        hashToolController = nil
+        codecToolController = nil
+        structuredToolController = nil
+        conversionToolController = nil
     }
 
     @objc func showPreferences(_ sender: Any?) {
@@ -398,79 +428,79 @@ final class AppDelegate: NSObject, NSApplicationDelegate, PreferencesDelegate, G
         // 1. Application Menu
         let appMenuItem = NSMenuItem()
         let appMenu = NSMenu()
-        appMenu.addItem(withTitle: "About Xeditor", action: #selector(showAboutPanel(_:)), keyEquivalent: "")
+        appMenu.addItem(withTitle: L("About Xeditor"), action: #selector(showAboutPanel(_:)), keyEquivalent: "")
         appMenu.addItem(NSMenuItem.separator())
-        appMenu.addItem(withTitle: "Preferences…", action: #selector(showPreferences(_:)), keyEquivalent: ",")
+        appMenu.addItem(withTitle: L("Preferences…"), action: #selector(showPreferences(_:)), keyEquivalent: ",")
         appMenu.addItem(NSMenuItem.separator())
-        appMenu.addItem(withTitle: "Hide Xeditor", action: #selector(NSApplication.hide(_:)), keyEquivalent: "h")
-        let hideOthers = NSMenuItem(title: "Hide Others", action: #selector(NSApplication.hideOtherApplications(_:)), keyEquivalent: "h")
+        appMenu.addItem(withTitle: L("Hide Xeditor"), action: #selector(NSApplication.hide(_:)), keyEquivalent: "h")
+        let hideOthers = NSMenuItem(title: L("Hide Others"), action: #selector(NSApplication.hideOtherApplications(_:)), keyEquivalent: "h")
         hideOthers.keyEquivalentModifierMask = [.command, .option]
         appMenu.addItem(hideOthers)
-        appMenu.addItem(withTitle: "Show All", action: #selector(NSApplication.unhideAllApplications(_:)), keyEquivalent: "")
+        appMenu.addItem(withTitle: L("Show All"), action: #selector(NSApplication.unhideAllApplications(_:)), keyEquivalent: "")
         appMenu.addItem(NSMenuItem.separator())
-        appMenu.addItem(withTitle: "Quit Xeditor", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+        appMenu.addItem(withTitle: L("Quit Xeditor"), action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         appMenuItem.submenu = appMenu
         mainMenu.addItem(appMenuItem)
 
         // 2. File Menu
         let fileMenuItem = NSMenuItem()
-        let fileMenu = NSMenu(title: "File")
+        let fileMenu = NSMenu(title: L("File"))
         // ⌘T, matching Terminal's New Tab shortcut.
-        fileMenu.addItem(withTitle: "New Tab", action: #selector(newDocument(_:)), keyEquivalent: "t")
-        fileMenu.addItem(withTitle: "Open…", action: #selector(openDocument(_:)), keyEquivalent: "o")
+        fileMenu.addItem(withTitle: L("New Tab"), action: #selector(newDocument(_:)), keyEquivalent: "t")
+        fileMenu.addItem(withTitle: L("Open…"), action: #selector(openDocument(_:)), keyEquivalent: "o")
         fileMenu.addItem(NSMenuItem.separator())
-        fileMenu.addItem(withTitle: "Save", action: #selector(saveDocument(_:)), keyEquivalent: "s")
-        let saveAsItem = NSMenuItem(title: "Save As…", action: #selector(saveDocumentAs(_:)), keyEquivalent: "S")
+        fileMenu.addItem(withTitle: L("Save"), action: #selector(saveDocument(_:)), keyEquivalent: "s")
+        let saveAsItem = NSMenuItem(title: L("Save As…"), action: #selector(saveDocumentAs(_:)), keyEquivalent: "S")
         fileMenu.addItem(saveAsItem)
         fileMenu.addItem(NSMenuItem.separator())
-        fileMenu.addItem(withTitle: "Close Tab", action: #selector(closeTab(_:)), keyEquivalent: "w")
-        fileMenu.addItem(withTitle: "Close Other Tabs", action: #selector(closeOtherTabs(_:)), keyEquivalent: "")
+        fileMenu.addItem(withTitle: L("Close Tab"), action: #selector(closeTab(_:)), keyEquivalent: "w")
+        fileMenu.addItem(withTitle: L("Close Other Tabs"), action: #selector(closeOtherTabs(_:)), keyEquivalent: "")
         fileMenuItem.submenu = fileMenu
         mainMenu.addItem(fileMenuItem)
 
         // 3. Edit Menu
         let editMenuItem = NSMenuItem()
-        let editMenu = NSMenu(title: "Edit")
-        editMenu.addItem(withTitle: "Undo", action: Selector(("undo:")), keyEquivalent: "z")
-        let redoItem = NSMenuItem(title: "Redo", action: Selector(("redo:")), keyEquivalent: "Z")
+        let editMenu = NSMenu(title: L("Edit"))
+        editMenu.addItem(withTitle: L("Undo"), action: Selector(("undo:")), keyEquivalent: "z")
+        let redoItem = NSMenuItem(title: L("Redo"), action: Selector(("redo:")), keyEquivalent: "Z")
         editMenu.addItem(redoItem)
         editMenu.addItem(NSMenuItem.separator())
-        editMenu.addItem(withTitle: "Cut", action: Selector(("cut:")), keyEquivalent: "x")
-        editMenu.addItem(withTitle: "Copy", action: Selector(("copy:")), keyEquivalent: "c")
-        editMenu.addItem(withTitle: "Paste", action: Selector(("paste:")), keyEquivalent: "v")
-        editMenu.addItem(withTitle: "Select All", action: Selector(("selectAll:")), keyEquivalent: "a")
+        editMenu.addItem(withTitle: L("Cut"), action: Selector(("cut:")), keyEquivalent: "x")
+        editMenu.addItem(withTitle: L("Copy"), action: Selector(("copy:")), keyEquivalent: "c")
+        editMenu.addItem(withTitle: L("Paste"), action: Selector(("paste:")), keyEquivalent: "v")
+        editMenu.addItem(withTitle: L("Select All"), action: Selector(("selectAll:")), keyEquivalent: "a")
         editMenu.addItem(NSMenuItem.separator())
 
         // Line Operations
-        editMenu.addItem(withTitle: "Duplicate Line", action: #selector(duplicateLine(_:)), keyEquivalent: "d")
-        let deleteLineItem = NSMenuItem(title: "Delete Line", action: #selector(deleteLine(_:)), keyEquivalent: "k")
+        editMenu.addItem(withTitle: L("Duplicate Line"), action: #selector(duplicateLine(_:)), keyEquivalent: "d")
+        let deleteLineItem = NSMenuItem(title: L("Delete Line"), action: #selector(deleteLine(_:)), keyEquivalent: "k")
         deleteLineItem.keyEquivalentModifierMask = [.command, .shift]
         editMenu.addItem(deleteLineItem)
 
-        let moveUpItem = NSMenuItem(title: "Move Line Up", action: #selector(moveLineUp(_:)), keyEquivalent: String(utf16CodeUnits: [unichar(NSUpArrowFunctionKey)], count: 1))
+        let moveUpItem = NSMenuItem(title: L("Move Line Up"), action: #selector(moveLineUp(_:)), keyEquivalent: String(utf16CodeUnits: [unichar(NSUpArrowFunctionKey)], count: 1))
         moveUpItem.keyEquivalentModifierMask = [.option]
         editMenu.addItem(moveUpItem)
 
-        let moveDownItem = NSMenuItem(title: "Move Line Down", action: #selector(moveLineDown(_:)), keyEquivalent: String(utf16CodeUnits: [unichar(NSDownArrowFunctionKey)], count: 1))
+        let moveDownItem = NSMenuItem(title: L("Move Line Down"), action: #selector(moveLineDown(_:)), keyEquivalent: String(utf16CodeUnits: [unichar(NSDownArrowFunctionKey)], count: 1))
         moveDownItem.keyEquivalentModifierMask = [.option]
         editMenu.addItem(moveDownItem)
 
-        editMenu.addItem(withTitle: "Join Lines", action: #selector(joinLines(_:)), keyEquivalent: "j")
-        editMenu.addItem(withTitle: "Toggle Line Comment", action: #selector(toggleComment(_:)), keyEquivalent: "/")
+        editMenu.addItem(withTitle: L("Join Lines"), action: #selector(joinLines(_:)), keyEquivalent: "j")
+        editMenu.addItem(withTitle: L("Toggle Line Comment"), action: #selector(toggleComment(_:)), keyEquivalent: "/")
         editMenu.addItem(NSMenuItem.separator())
 
         // Text transformations submenu
-        let transSub = NSMenu(title: "Text Transformations")
-        let upperItem = NSMenuItem(title: "Make Upper Case", action: #selector(makeUpperCase(_:)), keyEquivalent: "U")
+        let transSub = NSMenu(title: L("Text Transformations"))
+        let upperItem = NSMenuItem(title: L("Make Upper Case"), action: #selector(makeUpperCase(_:)), keyEquivalent: "U")
         transSub.addItem(upperItem)
-        transSub.addItem(withTitle: "Make Lower Case", action: #selector(makeLowerCase(_:)), keyEquivalent: "u")
+        transSub.addItem(withTitle: L("Make Lower Case"), action: #selector(makeLowerCase(_:)), keyEquivalent: "u")
         transSub.addItem(NSMenuItem.separator())
-        transSub.addItem(withTitle: "Sort Lines (Ascending)", action: #selector(sortLinesAscending(_:)), keyEquivalent: "")
-        transSub.addItem(withTitle: "Sort Lines (Descending)", action: #selector(sortLinesDescending(_:)), keyEquivalent: "")
+        transSub.addItem(withTitle: L("Sort Lines (Ascending)"), action: #selector(sortLinesAscending(_:)), keyEquivalent: "")
+        transSub.addItem(withTitle: L("Sort Lines (Descending)"), action: #selector(sortLinesDescending(_:)), keyEquivalent: "")
         transSub.addItem(NSMenuItem.separator())
-        transSub.addItem(withTitle: "Trim Trailing Whitespace", action: #selector(trimTrailingWhitespace(_:)), keyEquivalent: "")
+        transSub.addItem(withTitle: L("Trim Trailing Whitespace"), action: #selector(trimTrailingWhitespace(_:)), keyEquivalent: "")
 
-        let transMenuItem = NSMenuItem(title: "Text Transformations", action: nil, keyEquivalent: "")
+        let transMenuItem = NSMenuItem(title: L("Text Transformations"), action: nil, keyEquivalent: "")
         transMenuItem.submenu = transSub
         editMenu.addItem(transMenuItem)
 
@@ -479,101 +509,101 @@ final class AppDelegate: NSObject, NSApplicationDelegate, PreferencesDelegate, G
 
         // 4. Find Menu
         let findMenuItem = NSMenuItem()
-        let findMenu = NSMenu(title: "Find")
-        findMenu.addItem(withTitle: "Find…", action: #selector(showFind(_:)), keyEquivalent: "f")
-        findMenu.addItem(withTitle: "Find Next", action: #selector(findNext(_:)), keyEquivalent: "g")
-        let findPrevItem = NSMenuItem(title: "Find Previous", action: #selector(findPrevious(_:)), keyEquivalent: "G")
+        let findMenu = NSMenu(title: L("Find"))
+        findMenu.addItem(withTitle: L("Find…"), action: #selector(showFind(_:)), keyEquivalent: "f")
+        findMenu.addItem(withTitle: L("Find Next"), action: #selector(findNext(_:)), keyEquivalent: "g")
+        let findPrevItem = NSMenuItem(title: L("Find Previous"), action: #selector(findPrevious(_:)), keyEquivalent: "G")
         findMenu.addItem(findPrevItem)
-        let replaceItem = NSMenuItem(title: "Find and Replace…", action: #selector(showReplace(_:)), keyEquivalent: "f")
+        let replaceItem = NSMenuItem(title: L("Find and Replace…"), action: #selector(showReplace(_:)), keyEquivalent: "f")
         replaceItem.keyEquivalentModifierMask = [.command, .option]
         findMenu.addItem(replaceItem)
-        let markItem = NSMenuItem(title: "Mark All…", action: #selector(showMark(_:)), keyEquivalent: "m")
+        let markItem = NSMenuItem(title: L("Mark All…"), action: #selector(showMark(_:)), keyEquivalent: "m")
         markItem.keyEquivalentModifierMask = [.command, .option]
         findMenu.addItem(markItem)
         findMenu.addItem(NSMenuItem.separator())
-        findMenu.addItem(withTitle: "Find All in Current Document", action: #selector(findAllInCurrentDocument(_:)), keyEquivalent: "")
-        findMenu.addItem(withTitle: "Find All in Open Documents", action: #selector(findAllInOpenDocuments(_:)), keyEquivalent: "")
-        findMenu.addItem(withTitle: "Replace All in Open Documents", action: #selector(replaceAllInOpenDocuments(_:)), keyEquivalent: "")
+        findMenu.addItem(withTitle: L("Find All in Current Document"), action: #selector(findAllInCurrentDocument(_:)), keyEquivalent: "")
+        findMenu.addItem(withTitle: L("Find All in Open Documents"), action: #selector(findAllInOpenDocuments(_:)), keyEquivalent: "")
+        findMenu.addItem(withTitle: L("Replace All in Open Documents"), action: #selector(replaceAllInOpenDocuments(_:)), keyEquivalent: "")
         findMenu.addItem(NSMenuItem.separator())
-        findMenu.addItem(withTitle: "Clear Marks", action: #selector(clearFindMarks(_:)), keyEquivalent: "")
-        findMenu.addItem(withTitle: "Clear Find History", action: #selector(clearFindHistory(_:)), keyEquivalent: "")
+        findMenu.addItem(withTitle: L("Clear Marks"), action: #selector(clearFindMarks(_:)), keyEquivalent: "")
+        findMenu.addItem(withTitle: L("Clear Find History"), action: #selector(clearFindHistory(_:)), keyEquivalent: "")
         findMenu.addItem(NSMenuItem.separator())
-        findMenu.addItem(withTitle: "Go to Line…", action: #selector(showGoToLine(_:)), keyEquivalent: "l")
+        findMenu.addItem(withTitle: L("Go to Line…"), action: #selector(showGoToLine(_:)), keyEquivalent: "l")
         findMenuItem.submenu = findMenu
         mainMenu.addItem(findMenuItem)
 
         // 5. View Menu
         let viewMenuItem = NSMenuItem()
-        let viewMenu = NSMenu(title: "View")
+        let viewMenu = NSMenu(title: L("View"))
 
         // Folding Submenu
-        let foldSub = NSMenu(title: "Code Folding")
-        let toggleFoldItem = NSMenuItem(title: "Toggle Current Fold", action: #selector(toggleFoldCurrent(_:)), keyEquivalent: "o")
+        let foldSub = NSMenu(title: L("Code Folding"))
+        let toggleFoldItem = NSMenuItem(title: L("Toggle Current Fold"), action: #selector(toggleFoldCurrent(_:)), keyEquivalent: "o")
         toggleFoldItem.keyEquivalentModifierMask = [.command, .option]
         foldSub.addItem(toggleFoldItem)
-        let foldAllItem = NSMenuItem(title: "Fold All", action: #selector(foldAll(_:)), keyEquivalent: "[")
+        let foldAllItem = NSMenuItem(title: L("Fold All"), action: #selector(foldAll(_:)), keyEquivalent: "[")
         foldAllItem.keyEquivalentModifierMask = [.command, .option]
         foldSub.addItem(foldAllItem)
-        let unfoldAllItem = NSMenuItem(title: "Unfold All", action: #selector(unfoldAll(_:)), keyEquivalent: "]")
+        let unfoldAllItem = NSMenuItem(title: L("Unfold All"), action: #selector(unfoldAll(_:)), keyEquivalent: "]")
         unfoldAllItem.keyEquivalentModifierMask = [.command, .option]
         foldSub.addItem(unfoldAllItem)
-        let foldMenuItem = NSMenuItem(title: "Code Folding", action: nil, keyEquivalent: "")
+        let foldMenuItem = NSMenuItem(title: L("Code Folding"), action: nil, keyEquivalent: "")
         foldMenuItem.submenu = foldSub
         viewMenu.addItem(foldMenuItem)
 
         // Bookmarks Submenu
-        let bmSub = NSMenu(title: "Bookmarks")
+        let bmSub = NSMenu(title: L("Bookmarks"))
         let f2Key = String(utf16CodeUnits: [unichar(NSF2FunctionKey)], count: 1)
-        let toggleBm = NSMenuItem(title: "Toggle Bookmark", action: #selector(toggleBookmark(_:)), keyEquivalent: f2Key)
+        let toggleBm = NSMenuItem(title: L("Toggle Bookmark"), action: #selector(toggleBookmark(_:)), keyEquivalent: f2Key)
         toggleBm.keyEquivalentModifierMask = [.command]
         bmSub.addItem(toggleBm)
-        let nextBm = NSMenuItem(title: "Next Bookmark", action: #selector(nextBookmark(_:)), keyEquivalent: f2Key)
+        let nextBm = NSMenuItem(title: L("Next Bookmark"), action: #selector(nextBookmark(_:)), keyEquivalent: f2Key)
         nextBm.keyEquivalentModifierMask = []
         bmSub.addItem(nextBm)
-        let prevBm = NSMenuItem(title: "Previous Bookmark", action: #selector(previousBookmark(_:)), keyEquivalent: f2Key)
+        let prevBm = NSMenuItem(title: L("Previous Bookmark"), action: #selector(previousBookmark(_:)), keyEquivalent: f2Key)
         prevBm.keyEquivalentModifierMask = [.shift]
         bmSub.addItem(prevBm)
         bmSub.addItem(NSMenuItem.separator())
-        bmSub.addItem(withTitle: "Clear All Bookmarks", action: #selector(clearAllBookmarks(_:)), keyEquivalent: "")
-        let bmMenuItem = NSMenuItem(title: "Bookmarks", action: nil, keyEquivalent: "")
+        bmSub.addItem(withTitle: L("Clear All Bookmarks"), action: #selector(clearAllBookmarks(_:)), keyEquivalent: "")
+        let bmMenuItem = NSMenuItem(title: L("Bookmarks"), action: nil, keyEquivalent: "")
         bmMenuItem.submenu = bmSub
         viewMenu.addItem(bmMenuItem)
 
         viewMenu.addItem(NSMenuItem.separator())
-        viewMenu.addItem(withTitle: "Bigger Font", action: #selector(makeFontBigger(_:)), keyEquivalent: "+")
-        viewMenu.addItem(withTitle: "Smaller Font", action: #selector(makeFontSmaller(_:)), keyEquivalent: "-")
-        viewMenu.addItem(withTitle: "Default Font Size", action: #selector(resetFontSize(_:)), keyEquivalent: "0")
+        viewMenu.addItem(withTitle: L("Bigger Font"), action: #selector(makeFontBigger(_:)), keyEquivalent: "+")
+        viewMenu.addItem(withTitle: L("Smaller Font"), action: #selector(makeFontSmaller(_:)), keyEquivalent: "-")
+        viewMenu.addItem(withTitle: L("Default Font Size"), action: #selector(resetFontSize(_:)), keyEquivalent: "0")
         viewMenu.addItem(NSMenuItem.separator())
-        viewMenu.addItem(withTitle: "Toggle Word Wrap", action: #selector(toggleWordWrap(_:)), keyEquivalent: "")
-        viewMenu.addItem(withTitle: "Show Whitespace", action: #selector(toggleShowWhitespace(_:)), keyEquivalent: "")
-        viewMenu.addItem(withTitle: "Show Indent Guides", action: #selector(toggleIndentGuides(_:)), keyEquivalent: "")
+        viewMenu.addItem(withTitle: L("Toggle Word Wrap"), action: #selector(toggleWordWrap(_:)), keyEquivalent: "")
+        viewMenu.addItem(withTitle: L("Show Whitespace"), action: #selector(toggleShowWhitespace(_:)), keyEquivalent: "")
+        viewMenu.addItem(withTitle: L("Show Indent Guides"), action: #selector(toggleIndentGuides(_:)), keyEquivalent: "")
 
         viewMenuItem.submenu = viewMenu
         mainMenu.addItem(viewMenuItem)
 
         // 6. Tools Menu
         let toolsMenuItem = NSMenuItem()
-        let toolsMenu = NSMenu(title: "Tools")
-        let compareItem = NSMenuItem(title: "Compare Files…", action: #selector(showCompareTool(_:)), keyEquivalent: "D")
+        let toolsMenu = NSMenu(title: L("Tools"))
+        let compareItem = NSMenuItem(title: L("Compare Files…"), action: #selector(showCompareTool(_:)), keyEquivalent: "D")
         toolsMenu.addItem(compareItem)
         toolsMenu.addItem(NSMenuItem.separator())
-        toolsMenu.addItem(withTitle: "MD5 / SHA…", action: #selector(showHashTool(_:)), keyEquivalent: "")
-        toolsMenu.addItem(withTitle: "Base64 / URL…", action: #selector(showCodecTool(_:)), keyEquivalent: "")
-        toolsMenu.addItem(withTitle: "Structured Data…", action: #selector(showStructuredTool(_:)), keyEquivalent: "")
-        toolsMenu.addItem(withTitle: "JSON ⇄ YAML…", action: #selector(showConversionTool(_:)), keyEquivalent: "")
+        toolsMenu.addItem(withTitle: L("MD5 / SHA…"), action: #selector(showHashTool(_:)), keyEquivalent: "")
+        toolsMenu.addItem(withTitle: L("Base64 / URL…"), action: #selector(showCodecTool(_:)), keyEquivalent: "")
+        toolsMenu.addItem(withTitle: L("Structured Data…"), action: #selector(showStructuredTool(_:)), keyEquivalent: "")
+        toolsMenu.addItem(withTitle: L("JSON ⇄ YAML…"), action: #selector(showConversionTool(_:)), keyEquivalent: "")
         toolsMenuItem.submenu = toolsMenu
         mainMenu.addItem(toolsMenuItem)
 
         // 7. Window Menu
         let windowMenuItem = NSMenuItem()
-        let windowMenu = NSMenu(title: "Window")
-        windowMenu.addItem(withTitle: "Minimize", action: #selector(NSWindow.miniaturize(_:)), keyEquivalent: "m")
-        windowMenu.addItem(withTitle: "Zoom", action: #selector(NSWindow.zoom(_:)), keyEquivalent: "")
+        let windowMenu = NSMenu(title: L("Window"))
+        windowMenu.addItem(withTitle: L("Minimize"), action: #selector(NSWindow.miniaturize(_:)), keyEquivalent: "m")
+        windowMenu.addItem(withTitle: L("Zoom"), action: #selector(NSWindow.zoom(_:)), keyEquivalent: "")
         windowMenu.addItem(NSMenuItem.separator())
-        let nextTabItem = NSMenuItem(title: "Show Next Tab", action: #selector(showNextTab(_:)), keyEquivalent: "\t")
+        let nextTabItem = NSMenuItem(title: L("Show Next Tab"), action: #selector(showNextTab(_:)), keyEquivalent: "\t")
         nextTabItem.keyEquivalentModifierMask = [.control]
         windowMenu.addItem(nextTabItem)
-        let prevTabItem = NSMenuItem(title: "Show Previous Tab", action: #selector(showPreviousTab(_:)), keyEquivalent: "\t")
+        let prevTabItem = NSMenuItem(title: L("Show Previous Tab"), action: #selector(showPreviousTab(_:)), keyEquivalent: "\t")
         prevTabItem.keyEquivalentModifierMask = [.control, .shift]
         windowMenu.addItem(prevTabItem)
         windowMenuItem.submenu = windowMenu

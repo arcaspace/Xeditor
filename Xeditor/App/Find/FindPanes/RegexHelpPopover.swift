@@ -31,47 +31,47 @@ private final class RegexHelpView: NSView {
     }
 
     private func build() {
-        let title = NSTextField(labelWithString: "Basic Regular Expression Syntax")
+        let title = NSTextField(labelWithString: L("Basic Regular Expression Syntax"))
         title.font = .systemFont(ofSize: 15, weight: .semibold)
         title.textColor = .labelColor
 
-        let characters = Self.section("Characters", [
-            (".", "Any character"),
-            ("\\R", "Line break"),
-            ("\\n", "Line feed"),
-            ("\\r", "Carriage return"),
-            ("\\t", "Tab"),
-            ("\\w", "Word character"),
-            ("\\s", "Whitespace"),
-            ("\\S", "Non-whitespace"),
-            ("\\d", "Digit"),
-            ("[A-Z]", "Any character from A to Z"),
-            ("[^A-Z]", "Any character not from A to Z")
+        let characters = Self.section(L("Characters"), [
+            (".", L("Any character")),
+            ("\\R", L("Line break")),
+            ("\\n", L("Line feed")),
+            ("\\r", L("Carriage return")),
+            ("\\t", L("Tab character")),
+            ("\\w", L("Word character")),
+            ("\\s", L("Whitespace")),
+            ("\\S", L("Non-whitespace")),
+            ("\\d", L("Digit")),
+            ("[A-Z]", L("Any character from A to Z")),
+            ("[^A-Z]", L("Any character not from A to Z"))
         ], tokenWidth: 56)
 
-        let anchors = Self.section("Anchors", [
-            ("^", "Start of line"),
-            ("$", "End of line"),
-            ("\\b", "Word boundary")
+        let anchors = Self.section(L("Anchors"), [
+            ("^", L("Start of line")),
+            ("$", L("End of line")),
+            ("\\b", L("Word boundary"))
         ], tokenWidth: 56)
 
-        let quantities = Self.section("Quantities", [
-            ("?", "One time or none"),
-            ("*", "Zero or more"),
-            ("+", "One or more"),
-            ("{n,m}", "At least n, at most m"),
-            ("{n,}", "At least n"),
-            ("{,n}", "None up to n"),
-            ("{n}", "Exactly n times")
+        let quantities = Self.section(L("Quantities"), [
+            ("?", L("One time or none")),
+            ("*", L("Zero or more")),
+            ("+", L("One or more")),
+            ("{n,m}", L("At least n, at most m")),
+            ("{n,}", L("At least n")),
+            ("{,n}", L("None up to n")),
+            ("{n}", L("Exactly n times"))
         ], tokenWidth: 86)
 
-        let groups = Self.section("Extended groups", [
-            ("(?=subexp)", "Lookahead"),
-            ("(?<=subexp)", "Lookbehind")
+        let groups = Self.section(L("Extended groups"), [
+            ("(?=subexp)", L("Lookahead")),
+            ("(?<=subexp)", L("Lookbehind"))
         ], tokenWidth: 86)
 
-        let backRefs = Self.section("Back references", [
-            ("$1", "First matched group")
+        let backRefs = Self.section(L("Back references"), [
+            ("$1", L("First matched group"))
         ], tokenWidth: 86)
 
         let left = NSStackView(views: [characters, anchors])
@@ -90,11 +90,11 @@ private final class RegexHelpView: NSView {
         columns.spacing = 44
 
         let footerText = NSMutableAttributedString(
-            string: "Syntax follows the ",
+            string: L("Syntax follows the "),
             attributes: [.font: NSFont.systemFont(ofSize: 11),
                          .foregroundColor: NSColor.secondaryLabelColor])
         footerText.append(NSAttributedString(
-            string: "ICU regular expression syntax.",
+            string: L("ICU regular expression syntax."),
             attributes: [.font: NSFont.systemFont(ofSize: 11),
                          .foregroundColor: NSColor.controlAccentColor,
                          .link: URL(string: "https://unicode-org.github.io/icu/userguide/strings/regexp.html")!]))

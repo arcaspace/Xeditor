@@ -9,7 +9,7 @@ struct StructuredFormatError: Error {
 
     var displayText: String {
         if let line, let column {
-            return "Line \(line), column \(column): \(message)"
+            return LF("Line %d, column %d: %@", line, column, message)
         }
         return message
     }

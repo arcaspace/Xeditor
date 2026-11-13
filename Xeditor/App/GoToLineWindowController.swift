@@ -25,7 +25,7 @@ final class GoToLineWindowController: NSWindowController {
             backing: .buffered,
             defer: false
         )
-        window.title = "Go to Line"
+        window.title = L("Go to Line")
         window.isReleasedWhenClosed = false
         super.init(window: window)
 
@@ -39,7 +39,7 @@ final class GoToLineWindowController: NSWindowController {
     private func setupUI() {
         guard let contentView = window?.contentView else { return }
 
-        let titleLabel = NSTextField(labelWithString: "Go to Line")
+        let titleLabel = NSTextField(labelWithString: L("Go to Line"))
         titleLabel.font = NSFont.boldSystemFont(ofSize: 13)
         titleLabel.frame = NSRect(x: 20, y: 92, width: 220, height: 20)
         contentView.addSubview(titleLabel)
@@ -53,11 +53,11 @@ final class GoToLineWindowController: NSWindowController {
 
         infoLabel.font = NSFont.systemFont(ofSize: 12)
         infoLabel.textColor = .secondaryLabelColor
-        infoLabel.stringValue = "of \(maxLine)"
+        infoLabel.stringValue = LF("of %d", maxLine)
         infoLabel.frame = NSRect(x: 126, y: 60, width: 110, height: 20)
         contentView.addSubview(infoLabel)
 
-        cancelButton.title = "Cancel"
+        cancelButton.title = L("Cancel")
         cancelButton.bezelStyle = .rounded
         cancelButton.keyEquivalent = "\u{1b}" // Escape
         cancelButton.target = self
@@ -65,7 +65,7 @@ final class GoToLineWindowController: NSWindowController {
         cancelButton.frame = NSRect(x: 80, y: 14, width: 80, height: 28)
         contentView.addSubview(cancelButton)
 
-        goButton.title = "Go"
+        goButton.title = L("Go")
         goButton.bezelStyle = .rounded
         goButton.keyEquivalent = "\r" // Enter
         goButton.target = self

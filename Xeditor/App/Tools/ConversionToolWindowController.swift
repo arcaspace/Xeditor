@@ -51,7 +51,7 @@ final class ConversionToolWindowController: ToolWindowController {
 
     init(store: DocumentStore) {
         self.store = store
-        super.init(title: "JSON ⇄ YAML",
+        super.init(title: L("JSON ⇄ YAML"),
                    size: NSSize(width: 720, height: 620),
                    minSize: NSSize(width: 560, height: 460),
                    autosaveName: "XeditorJSONYAMLTool")
@@ -88,7 +88,7 @@ final class ConversionToolWindowController: ToolWindowController {
         inputScroll.heightAnchor.constraint(greaterThanOrEqualToConstant: 110).isActive = true
 
         let directionRow = NSStackView(views: [
-            ToolUI.sectionLabel("Direction"),
+            ToolUI.sectionLabel(L("Direction")),
             directionControl,
             ToolUI.spacer(),
         ])
@@ -96,23 +96,23 @@ final class ConversionToolWindowController: ToolWindowController {
         directionRow.alignment = .centerY
         directionRow.spacing = 10
 
-        let convertButton = ToolUI.button("Convert", target: self, action: #selector(convertAction))
-        convertButton.toolTip = "Parse the input and emit the other format."
+        let convertButton = ToolUI.button(L("Convert"), target: self, action: #selector(convertAction))
+        convertButton.toolTip = L("Parse the input and emit the other format.")
 
-        let swapButton = ToolUI.button("Swap", target: self, action: #selector(swapAction))
-        swapButton.toolTip = "Move the result into the input and reverse the direction."
+        let swapButton = ToolUI.button(L("Swap"), target: self, action: #selector(swapAction))
+        swapButton.toolTip = L("Move the result into the input and reverse the direction.")
 
-        let clearButton = ToolUI.button("Clear", target: self, action: #selector(clearAction))
+        let clearButton = ToolUI.button(L("Clear"), target: self, action: #selector(clearAction))
 
         let actionRow = NSStackView(views: [convertButton, swapButton, clearButton, ToolUI.spacer()])
         actionRow.orientation = .horizontal
         actionRow.alignment = .centerY
         actionRow.spacing = 8
 
-        let applyButton = ToolUI.button("Apply to Editor", target: self, action: #selector(applyToEditorAction))
-        applyButton.toolTip = "Replace the editor selection, or the whole document when nothing is selected."
+        let applyButton = ToolUI.button(L("Apply to Editor"), target: self, action: #selector(applyToEditorAction))
+        applyButton.toolTip = L("Replace the editor selection, or the whole document when nothing is selected.")
 
-        let copyButton = ToolUI.button("Copy Result", target: self, action: #selector(copyOutputAction))
+        let copyButton = ToolUI.button(L("Copy Result"), target: self, action: #selector(copyOutputAction))
 
         statusLabel.lineBreakMode = .byTruncatingTail
         statusLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
@@ -126,10 +126,10 @@ final class ConversionToolWindowController: ToolWindowController {
 
         let stack = NSStackView(views: [
             directionRow,
-            ToolUI.sectionLabel("Input"),
+            ToolUI.sectionLabel(L("Input")),
             inputScroll,
             actionRow,
-            ToolUI.sectionLabel("Result"),
+            ToolUI.sectionLabel(L("Result")),
             outputScroll,
             footerRow,
         ])
@@ -165,7 +165,7 @@ final class ConversionToolWindowController: ToolWindowController {
         if !selection.isEmpty, selection.utf16.count <= 2_000_000 {
             inputTextView.string = selection
             selectDetectedDirection(for: selection)
-            showStatus("Loaded the editor selection.", isError: false)
+            showStatus(L("Loaded the editor selection."), isError: false)
             return
         }
         guard inputTextView.string.isEmpty else { return }
@@ -173,7 +173,7 @@ final class ConversionToolWindowController: ToolWindowController {
         guard !document.isEmpty, document.utf16.count <= 2_000_000 else { return }
         inputTextView.string = document
         selectDetectedDirection(for: document)
-        showStatus("Loaded the active document.", isError: false)
+        showStatus(L("Loaded the active document."), isError: false)
     }
 
     private func selectDetectedDirection(for text: String) {
@@ -195,14 +195,14 @@ final class ConversionToolWindowController: ToolWindowController {
         let input = inputTextView.string
         guard !input.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             NSSound.beep()
-            showStatus("There is no input to convert.", isError: true)
+            showStatus(L("There is no input to convert."), isError: true)
             return false
         }
         let selected = direction
         do {
             let result = try ConversionDirection.convert(input, direction: selected)
             outputTextView.string = result
-            showStatus("Converted \(selected.sourceName) to \(selected.targetName).", isError: false)
+            showStatus(LF("Converted %@ to %@.", selected.sourceName, selected.targetName), isError: false)
             return true
         } catch let error as StructuredFormatError {
             NSSound.beep()
@@ -219,26 +219,26 @@ final class ConversionToolWindowController: ToolWindowController {
         let result = outputTextView.string
         guard !result.isEmpty else {
             NSSound.beep()
-            showStatus("There is no result to swap.", isError: true)
+            showStatus(L("There is no result to swap."), isError: true)
             return
         }
         inputTextView.string = result
         outputTextView.string = ""
         directionControl.selectedSegment = (direction == .jsonToYAML ? ConversionDirection.yamlToJSON : .jsonToYAML).rawValue
-        showStatus("Swapped direction.", isError: false)
+        showStatus(L("Swapped direction."), isError: false)
         performConversion()
     }
 
     @objc private func applyToEditorAction() {
         guard let editor = store.activeDocument?.editor else {
             NSSound.beep()
-            showStatus("No document is open.", isError: true)
+            showStatus(L("No document is open."), isError: true)
             return
         }
         let result = outputTextView.string
         guard !result.isEmpty else {
             NSSound.beep()
-            showStatus("There is no result to apply.", isError: true)
+            showStatus(L("There is no result to apply."), isError: true)
             return
         }
 
@@ -251,7 +251,7 @@ final class ConversionToolWindowController: ToolWindowController {
         }
         guard end >= start else {
             NSSound.beep()
-            showStatus("The editor selection is not valid.", isError: true)
+            showStatus(L("The editor selection is not valid."), isError: true)
             return
         }
 
@@ -261,27 +261,27 @@ final class ConversionToolWindowController: ToolWindowController {
                                            regex: false)
         guard inserted >= 0 else {
             NSSound.beep()
-            showStatus("The editor rejected the replacement.", isError: true)
+            showStatus(L("The editor rejected the replacement."), isError: true)
             return
         }
         editor.selectRange(start: start, end: start + inserted)
         onEditorChanged?()
         showStatus(wholeDocument
-                    ? "Applied to the whole document."
-                    : "Applied to the editor selection.", isError: false)
+                    ? L("Applied to the whole document.")
+                    : L("Applied to the editor selection."), isError: false)
     }
 
     @objc private func copyOutputAction() {
         let text = outputTextView.string
         guard !text.isEmpty else {
             NSSound.beep()
-            showStatus("There is no result to copy.", isError: true)
+            showStatus(L("There is no result to copy."), isError: true)
             return
         }
         let pasteboard = NSPasteboard.general
         pasteboard.clearContents()
         pasteboard.setString(text, forType: .string)
-        showStatus("Result copied to the clipboard.", isError: false)
+        showStatus(L("Result copied to the clipboard."), isError: false)
     }
 
     @objc private func clearAction() {

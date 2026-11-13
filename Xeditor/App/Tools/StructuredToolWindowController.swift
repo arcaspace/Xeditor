@@ -20,7 +20,7 @@ final class StructuredToolWindowController: ToolWindowController {
 
     init(store: DocumentStore) {
         self.store = store
-        super.init(title: "Structured Data",
+        super.init(title: L("Structured Data"),
                    size: NSSize(width: 720, height: 620),
                    minSize: NSSize(width: 560, height: 460),
                    autosaveName: "XeditorStructuredDataTool")
@@ -57,7 +57,7 @@ final class StructuredToolWindowController: ToolWindowController {
         inputScroll.heightAnchor.constraint(greaterThanOrEqualToConstant: 110).isActive = true
 
         let kindRow = NSStackView(views: [
-            ToolUI.sectionLabel("Format"),
+            ToolUI.sectionLabel(L("Format")),
             formatControl,
             ToolUI.spacer(),
         ])
@@ -65,27 +65,27 @@ final class StructuredToolWindowController: ToolWindowController {
         kindRow.alignment = .centerY
         kindRow.spacing = 10
 
-        let formatButton = ToolUI.button("Format", target: self, action: #selector(formatAction))
-        formatButton.toolTip = "Pretty-print the input in the selected format."
+        let formatButton = ToolUI.button(L("Format"), target: self, action: #selector(formatAction))
+        formatButton.toolTip = L("Pretty-print the input in the selected format.")
 
-        minifyButton.title = "Minify"
+        minifyButton.title = L("Minify")
         minifyButton.bezelStyle = .rounded
         minifyButton.target = self
         minifyButton.action = #selector(minifyAction)
-        minifyButton.toolTip = "Remove insignificant whitespace (JSON only)."
+        minifyButton.toolTip = L("Remove insignificant whitespace (JSON only).")
         minifyButton.isEnabled = isMinifySupported
 
-        let clearButton = ToolUI.button("Clear", target: self, action: #selector(clearAction))
+        let clearButton = ToolUI.button(L("Clear"), target: self, action: #selector(clearAction))
 
         let actionRow = NSStackView(views: [formatButton, minifyButton, clearButton, ToolUI.spacer()])
         actionRow.orientation = .horizontal
         actionRow.alignment = .centerY
         actionRow.spacing = 8
 
-        let applyButton = ToolUI.button("Apply to Editor", target: self, action: #selector(applyToEditorAction))
-        applyButton.toolTip = "Replace the editor selection, or the whole document when nothing is selected."
+        let applyButton = ToolUI.button(L("Apply to Editor"), target: self, action: #selector(applyToEditorAction))
+        applyButton.toolTip = L("Replace the editor selection, or the whole document when nothing is selected.")
 
-        let copyButton = ToolUI.button("Copy Result", target: self, action: #selector(copyOutputAction))
+        let copyButton = ToolUI.button(L("Copy Result"), target: self, action: #selector(copyOutputAction))
 
         statusLabel.lineBreakMode = .byTruncatingTail
         statusLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
@@ -99,10 +99,10 @@ final class StructuredToolWindowController: ToolWindowController {
 
         let stack = NSStackView(views: [
             kindRow,
-            ToolUI.sectionLabel("Input"),
+            ToolUI.sectionLabel(L("Input")),
             inputScroll,
             actionRow,
-            ToolUI.sectionLabel("Result"),
+            ToolUI.sectionLabel(L("Result")),
             outputScroll,
             footerRow,
         ])
@@ -143,7 +143,7 @@ final class StructuredToolWindowController: ToolWindowController {
         if !selection.isEmpty, selection.utf16.count <= 2_000_000 {
             inputTextView.string = selection
             selectDetectedFormat(for: selection)
-            showStatus("Loaded the editor selection.", isError: false)
+            showStatus(L("Loaded the editor selection."), isError: false)
             return
         }
         guard inputTextView.string.isEmpty else { return }
@@ -151,7 +151,7 @@ final class StructuredToolWindowController: ToolWindowController {
         guard !document.isEmpty, document.utf16.count <= 2_000_000 else { return }
         inputTextView.string = document
         selectDetectedFormat(for: document)
-        showStatus("Loaded the active document.", isError: false)
+        showStatus(L("Loaded the active document."), isError: false)
     }
 
     private func selectDetectedFormat(for text: String) {
@@ -171,14 +171,14 @@ final class StructuredToolWindowController: ToolWindowController {
         let input = inputTextView.string
         guard !input.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             NSSound.beep()
-            showStatus("There is no input to format.", isError: true)
+            showStatus(L("There is no input to format."), isError: true)
             return
         }
         let format = selectedFormat
         do {
             let result = try format.format(input)
             outputTextView.string = result
-            showStatus("Formatted \(format.title).", isError: false)
+            showStatus(LF("Formatted %@.", format.title), isError: false)
         } catch let error as StructuredFormatError {
             NSSound.beep()
             showStatus("\(format.title): \(error.displayText)", isError: true)
@@ -194,13 +194,13 @@ final class StructuredToolWindowController: ToolWindowController {
         let input = inputTextView.string
         guard !input.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             NSSound.beep()
-            showStatus("There is no input to minify.", isError: true)
+            showStatus(L("There is no input to minify."), isError: true)
             return
         }
         do {
             let result = try format.minify(input)
             outputTextView.string = result
-            showStatus("Minified \(format.title).", isError: false)
+            showStatus(LF("Minified %@.", format.title), isError: false)
         } catch let error as StructuredFormatError {
             NSSound.beep()
             showStatus("\(format.title): \(error.displayText)", isError: true)
@@ -213,13 +213,13 @@ final class StructuredToolWindowController: ToolWindowController {
     @objc private func applyToEditorAction() {
         guard let editor = store.activeDocument?.editor else {
             NSSound.beep()
-            showStatus("No document is open.", isError: true)
+            showStatus(L("No document is open."), isError: true)
             return
         }
         let result = outputTextView.string
         guard !result.isEmpty else {
             NSSound.beep()
-            showStatus("There is no result to apply.", isError: true)
+            showStatus(L("There is no result to apply."), isError: true)
             return
         }
 
@@ -232,7 +232,7 @@ final class StructuredToolWindowController: ToolWindowController {
         }
         guard end >= start else {
             NSSound.beep()
-            showStatus("The editor selection is not valid.", isError: true)
+            showStatus(L("The editor selection is not valid."), isError: true)
             return
         }
 
@@ -242,27 +242,27 @@ final class StructuredToolWindowController: ToolWindowController {
                                            regex: false)
         guard inserted >= 0 else {
             NSSound.beep()
-            showStatus("The editor rejected the replacement.", isError: true)
+            showStatus(L("The editor rejected the replacement."), isError: true)
             return
         }
         editor.selectRange(start: start, end: start + inserted)
         onEditorChanged?()
         showStatus(wholeDocument
-                    ? "Applied to the whole document."
-                    : "Applied to the editor selection.", isError: false)
+                    ? L("Applied to the whole document.")
+                    : L("Applied to the editor selection."), isError: false)
     }
 
     @objc private func copyOutputAction() {
         let text = outputTextView.string
         guard !text.isEmpty else {
             NSSound.beep()
-            showStatus("There is no result to copy.", isError: true)
+            showStatus(L("There is no result to copy."), isError: true)
             return
         }
         let pasteboard = NSPasteboard.general
         pasteboard.clearContents()
         pasteboard.setString(text, forType: .string)
-        showStatus("Result copied to the clipboard.", isError: false)
+        showStatus(L("Result copied to the clipboard."), isError: false)
     }
 
     @objc private func clearAction() {

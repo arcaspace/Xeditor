@@ -35,12 +35,12 @@ final class SearchOptionsView: NSView {
 
     init(variant: Variant) {
         self.variant = variant
-        caseBox = FindUI.checkbox("Match case", target: nil, action: nil, on: false)
-        wordBox = FindUI.checkbox("Whole word", target: nil, action: nil, on: false)
-        regexBox = FindUI.checkbox("Regular Expression", target: nil, action: nil, on: false)
+        caseBox = FindUI.checkbox(L("Match case"), target: nil, action: nil, on: false)
+        wordBox = FindUI.checkbox(L("Whole word"), target: nil, action: nil, on: false)
+        regexBox = FindUI.checkbox(L("Regular Expression"), target: nil, action: nil, on: false)
         if variant == .findReplace {
-            backwardBox = FindUI.checkbox("Backward", target: nil, action: nil, on: false)
-            wrapBox = FindUI.checkbox("Wrap around", target: nil, action: nil, on: true)
+            backwardBox = FindUI.checkbox(L("Backward"), target: nil, action: nil, on: false)
+            wrapBox = FindUI.checkbox(L("Wrap around"), target: nil, action: nil, on: true)
         } else {
             backwardBox = nil
             wrapBox = nil
@@ -91,6 +91,14 @@ final class SearchOptionsView: NSView {
 
     required init?(coder: NSCoder) {
         fatalError("init(coder:) has not been implemented")
+    }
+
+    func applyLocalization() {
+        caseBox.title = L("Match case")
+        wordBox.title = L("Whole word")
+        regexBox.title = L("Regular Expression")
+        backwardBox?.title = L("Backward")
+        wrapBox?.title = L("Wrap around")
     }
 
     func reload() {

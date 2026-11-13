@@ -21,7 +21,7 @@ final class CodecToolWindowController: ToolWindowController {
 
     init(store: DocumentStore) {
         self.store = store
-        super.init(title: "Base64 / URL",
+        super.init(title: L("Base64 / URL"),
                    size: NSSize(width: 620, height: 540),
                    minSize: NSSize(width: 480, height: 400),
                    autosaveName: "XeditorCodecTool")
@@ -53,10 +53,10 @@ final class CodecToolWindowController: ToolWindowController {
         let outputScroll = ToolUI.wrap(outputTextView)
         inputScroll.heightAnchor.constraint(greaterThanOrEqualToConstant: 110).isActive = true
 
-        let base64Encode = ToolUI.button("Base64 Encode", target: self, action: #selector(base64EncodeAction))
-        let base64Decode = ToolUI.button("Base64 Decode", target: self, action: #selector(base64DecodeAction))
-        let urlEncode = ToolUI.button("URL Encode", target: self, action: #selector(urlEncodeAction))
-        let urlDecode = ToolUI.button("URL Decode", target: self, action: #selector(urlDecodeAction))
+        let base64Encode = ToolUI.button(L("Base64 Encode"), target: self, action: #selector(base64EncodeAction))
+        let base64Decode = ToolUI.button(L("Base64 Decode"), target: self, action: #selector(base64DecodeAction))
+        let urlEncode = ToolUI.button(L("URL Encode"), target: self, action: #selector(urlEncodeAction))
+        let urlDecode = ToolUI.button(L("URL Decode"), target: self, action: #selector(urlDecodeAction))
 
         let convertRow = NSStackView(views: [base64Encode, base64Decode, urlEncode, urlDecode, ToolUI.spacer()])
         convertRow.orientation = .horizontal
@@ -64,14 +64,14 @@ final class CodecToolWindowController: ToolWindowController {
         convertRow.alignment = .centerY
         convertRow.spacing = 8
 
-        swapButton.title = "Move Output Up"
+        swapButton.title = L("Move Output Up")
         swapButton.bezelStyle = .rounded
         swapButton.target = self
         swapButton.action = #selector(swapAction)
 
-        let clearButton = ToolUI.button("Clear", target: self, action: #selector(clearAction))
+        let clearButton = ToolUI.button(L("Clear"), target: self, action: #selector(clearAction))
 
-        copyButton.title = "Copy Result"
+        copyButton.title = L("Copy Result")
         copyButton.bezelStyle = .rounded
         copyButton.target = self
         copyButton.action = #selector(copyOutputAction)
@@ -87,10 +87,10 @@ final class CodecToolWindowController: ToolWindowController {
         footerRow.spacing = 8
 
         let stack = NSStackView(views: [
-            ToolUI.sectionLabel("Input"),
+            ToolUI.sectionLabel(L("Input")),
             inputScroll,
             convertRow,
-            ToolUI.sectionLabel("Result"),
+            ToolUI.sectionLabel(L("Result")),
             outputScroll,
             footerRow,
         ])
@@ -122,13 +122,13 @@ final class CodecToolWindowController: ToolWindowController {
         let selection = editor.selectedText()
         guard !selection.isEmpty, selection.count <= 1_000_000 else { return }
         inputTextView.string = selection
-        showStatus("Loaded the editor selection.", isError: false)
+        showStatus(L("Loaded the editor selection."), isError: false)
     }
 
     @objc private func base64EncodeAction() {
         let data = Data(inputTextView.string.utf8)
-        setOutput(data.base64EncodedString(),
-                  status: "Base64-encoded \(data.count) byte\(data.count == 1 ? "" : "s").")
+        let key = data.count == 1 ? "Base64-encoded 1 byte." : "Base64-encoded %d bytes."
+        setOutput(data.base64EncodedString(), status: LF(key, data.count))
     }
 
     @objc private func base64DecodeAction() {
@@ -137,52 +137,52 @@ final class CodecToolWindowController: ToolWindowController {
             .joined()
         guard !compact.isEmpty else {
             NSSound.beep()
-            showStatus("Nothing to decode.", isError: true)
+            showStatus(L("Nothing to decode."), isError: true)
             return
         }
         guard let data = Self.decodeBase64(compact) else {
             NSSound.beep()
-            showStatus("The input is not valid Base64.", isError: true)
+            showStatus(L("The input is not valid Base64."), isError: true)
             return
         }
         let text = String(decoding: data, as: UTF8.self)
         let validUTF8 = String(data: data, encoding: .utf8) != nil
-        setOutput(text,
-                  status: validUTF8
-                    ? "Decoded \(data.count) byte\(data.count == 1 ? "" : "s")."
-                    : "Decoded \(data.count) bytes; the result is not valid UTF-8 (invalid bytes were replaced).")
+        let status = validUTF8
+            ? LF(data.count == 1 ? "Decoded 1 byte." : "Decoded %d bytes.", data.count)
+            : LF("Decoded %d bytes; the result is not valid UTF-8 (invalid bytes were replaced).", data.count)
+        setOutput(text, status: status)
     }
 
     @objc private func urlEncodeAction() {
         let input = inputTextView.string
         guard let encoded = input.addingPercentEncoding(withAllowedCharacters: Self.urlAllowed) else {
             NSSound.beep()
-            showStatus("The input could not be URL-encoded.", isError: true)
+            showStatus(L("The input could not be URL-encoded."), isError: true)
             return
         }
-        setOutput(encoded, status: "Percent-encoded UTF-8 text.")
+        setOutput(encoded, status: L("Percent-encoded UTF-8 text."))
     }
 
     @objc private func urlDecodeAction() {
         guard let decoded = inputTextView.string.removingPercentEncoding else {
             NSSound.beep()
-            showStatus("The input contains an invalid percent escape.", isError: true)
+            showStatus(L("The input contains an invalid percent escape."), isError: true)
             return
         }
-        setOutput(decoded, status: "Decoded percent escapes.")
+        setOutput(decoded, status: L("Decoded percent escapes."))
     }
 
     @objc private func swapAction() {
         let result = outputTextView.string
         guard !result.isEmpty else {
             NSSound.beep()
-            showStatus("There is no result to move up.", isError: true)
+            showStatus(L("There is no result to move up."), isError: true)
             return
         }
         let previousInput = inputTextView.string
         inputTextView.string = result
         outputTextView.string = previousInput
-        showStatus("Swapped the result back into the input.", isError: false)
+        showStatus(L("Swapped the result back into the input."), isError: false)
     }
 
     @objc private func clearAction() {
@@ -195,13 +195,13 @@ final class CodecToolWindowController: ToolWindowController {
         let text = outputTextView.string
         guard !text.isEmpty else {
             NSSound.beep()
-            showStatus("There is no result to copy.", isError: true)
+            showStatus(L("There is no result to copy."), isError: true)
             return
         }
         let pasteboard = NSPasteboard.general
         pasteboard.clearContents()
         pasteboard.setString(text, forType: .string)
-        showStatus("Result copied to the clipboard.", isError: false)
+        showStatus(L("Result copied to the clipboard."), isError: false)
     }
 
     // MARK: - Helpers

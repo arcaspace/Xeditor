@@ -29,10 +29,10 @@ enum FindTab: Int, CaseIterable {
 
     var title: String {
         switch self {
-        case .find:     return "Find"
-        case .replace:  return "Replace"
-        case .mark:     return "Mark"
-        case .settings: return "Settings"
+        case .find:     return L("Find")
+        case .replace:  return L("Replace")
+        case .mark:     return L("Mark")
+        case .settings: return L("Settings")
         }
     }
 }
@@ -89,7 +89,7 @@ final class FindWindowController: NSObject, NSWindowDelegate {
                                              action: nil)
         super.init()
 
-        panel.title = "Find and Replace"
+        panel.title = L("Find and Replace")
         panel.isFloatingPanel = false
         panel.hidesOnDeactivate = false
         panel.isReleasedWhenClosed = false
@@ -361,13 +361,13 @@ final class FindWindowController: NSObject, NSWindowDelegate {
             setStatus("", kind: .info)
         case .notFound:
             NSSound.beep()
-            setStatus("Not found: \(text)", kind: .warning)
+            setStatus(LF("Not found: %@", text), kind: .warning)
         case .invalidRegex:
             NSSound.beep()
-            setStatus("Invalid regular expression.", kind: .error)
+            setStatus(L("Invalid regular expression."), kind: .error)
         case .badRange:
             NSSound.beep()
-            setStatus("Invalid search range.", kind: .error)
+            setStatus(L("Invalid search range."), kind: .error)
         }
     }
 
@@ -381,7 +381,7 @@ final class FindWindowController: NSObject, NSWindowDelegate {
         let text = pane.searchField.stringValue
         guard !text.isEmpty else {
             NSSound.beep()
-            setStatus("Enter text to find.", kind: .warning)
+            setStatus(L("Enter text to find."), kind: .warning)
             return nil
         }
         settings.recordQuery(text)
@@ -405,7 +405,7 @@ final class FindWindowController: NSObject, NSWindowDelegate {
     func clearHistory() {
         settings.clearHistory()
         reloadHistories()
-        setStatus("Search history cleared.", kind: .info)
+        setStatus(L("Search history cleared."), kind: .info)
     }
 
     // MARK: - Find actions
@@ -413,17 +413,17 @@ final class FindWindowController: NSObject, NSWindowDelegate {
     func performFind(forward: Bool) {
         guard let query = typedQuery(from: queryPane) else { return }
         guard let result = session.find(query: query, forward: forward) else {
-            setStatus("No document is open.", kind: .warning)
+            setStatus(L("No document is open."), kind: .warning)
             return
         }
 
         switch result.status {
         case .ok:
             if result.wrapped {
-                setStatus(forward ? "Found — wrapped to the top." : "Found — wrapped to the bottom.",
+                setStatus(L(forward ? "Found — wrapped to the top." : "Found — wrapped to the bottom."),
                           kind: .warning)
             } else if let match = result.match {
-                setStatus("Found on line \(match.line).", kind: .info)
+                setStatus(LF("Found on line %d.", match.line), kind: .info)
             }
             host?.findHostRefresh()
         case .notFound, .invalidRegex, .badRange:
@@ -434,12 +434,12 @@ final class FindWindowController: NSObject, NSWindowDelegate {
     func performCount() {
         guard let query = typedQuery(from: queryPane) else { return }
         guard let result = session.count(query: query) else {
-            setStatus("No document is open.", kind: .warning)
+            setStatus(L("No document is open."), kind: .warning)
             return
         }
         switch result.status {
         case .ok:
-            setStatus("\(result.count) match\(result.count == 1 ? "" : "es") found.", kind: .info)
+            setStatus(result.count == 1 ? L("1 match found.") : LF("%d matches found.", result.count), kind: .info)
         case .notFound, .invalidRegex, .badRange:
             report(result.status, text: query.text)
         }
@@ -454,7 +454,7 @@ final class FindWindowController: NSObject, NSWindowDelegate {
             findAllInOpenDocuments(query: query)
         } else {
             guard let doc = store.activeDocument else {
-                setStatus("No document is open.", kind: .warning)
+                setStatus(L("No document is open."), kind: .warning)
                 return
             }
             let count = session.count(query: query)?.count ?? 0
@@ -475,11 +475,11 @@ final class FindWindowController: NSObject, NSWindowDelegate {
             let group = SearchResultGroup(location: .document(doc.id),
                                           displayName: doc.displayName,
                                           matches: matches)
-            let model = SearchResultsModel(querySummary: "Search “\(query.text)”",
+            let model = SearchResultsModel(querySummary: LF("Search “%@”", query.text),
                                            groups: [group],
                                            truncated: all.truncated)
             showResults(model, query: query)
-            setStatus("\(matches.count) match\(matches.count == 1 ? "" : "es") found.", kind: .info)
+            setStatus(matches.count == 1 ? L("1 match found.") : LF("%d matches found.", matches.count), kind: .info)
         }
     }
 
@@ -507,21 +507,31 @@ final class FindWindowController: NSObject, NSWindowDelegate {
         }
         guard confirmLargeResult(count: total) else { return }
 
-        let model = SearchResultsModel(querySummary: "Search “\(query.text)” in open documents",
+        let model = SearchResultsModel(querySummary: LF("Search “%@” in open documents", query.text),
                                        groups: groups,
                                        truncated: total >= Self.openDocumentsLimit)
         showResults(model, query: query)
-        setStatus("\(total) match\(total == 1 ? "" : "es") in \(groups.count) file\(groups.count == 1 ? "" : "s").",
+        let status: String
+        if total == 1 {
+            status = groups.count == 1
+                ? L("1 match in 1 file.")
+                : LF("1 match in %d files.", groups.count)
+        } else {
+            status = groups.count == 1
+                ? LF("%d matches in 1 file.", total)
+                : LF("%d matches in %d files.", total, groups.count)
+        }
+        setStatus(status,
                   kind: .info)
     }
 
     private func confirmLargeResult(count: Int) -> Bool {
         guard count > Self.confirmThreshold else { return true }
         let alert = NSAlert()
-        alert.messageText = "\(count) matches found."
-        alert.informativeText = "Listing this many results can be slow. Show them anyway?"
-        alert.addButton(withTitle: "Show Results")
-        alert.addButton(withTitle: "Cancel")
+        alert.messageText = LF("%d matches found.", count)
+        alert.informativeText = L("Listing this many results can be slow. Show them anyway?")
+        alert.addButton(withTitle: L("Show Results"))
+        alert.addButton(withTitle: L("Cancel"))
         return alert.runModal() == .alertFirstButtonReturn
     }
 
@@ -541,7 +551,7 @@ final class FindWindowController: NSObject, NSWindowDelegate {
     func copyMatchedText() {
         guard let query = typedQuery(from: queryPane) else { return }
         guard let doc = store.activeDocument else {
-            setStatus("No document is open.", kind: .warning)
+            setStatus(L("No document is open."), kind: .warning)
             return
         }
         let all = session.findAll(query: query, document: doc, maxCount: 50_000)
@@ -577,14 +587,14 @@ final class FindWindowController: NSObject, NSWindowDelegate {
         let pasteboard = NSPasteboard.general
         pasteboard.clearContents()
         pasteboard.setString(pieces.joined(separator: "\n"), forType: .string)
-        setStatus("Copied \(pieces.count) match\(pieces.count == 1 ? "" : "es").", kind: .info)
+        setStatus(pieces.count == 1 ? L("Copied 1 match.") : LF("Copied %d matches.", pieces.count), kind: .info)
     }
 
     func clearResults() {
         host?.findHostResultsPanel.clear()
         host?.findHostSetResultsVisible(false)
         resultsQuery = nil
-        setStatus("Results cleared.", kind: .info)
+        setStatus(L("Results cleared."), kind: .info)
     }
 
     // MARK: - Result jump
@@ -594,7 +604,7 @@ final class FindWindowController: NSObject, NSWindowDelegate {
         case .document(let id):
             guard let doc = store.documents.first(where: { $0.id == id }) else {
                 NSSound.beep()
-                setStatus("That document is no longer open.", kind: .warning)
+                setStatus(L("That document is no longer open."), kind: .warning)
                 return
             }
             host?.findHostReveal(documentID: id)
@@ -605,7 +615,7 @@ final class FindWindowController: NSObject, NSWindowDelegate {
             } else {
                 doc.editor.goToLine(match.line)
                 NSSound.beep()
-                setStatus("Text changed — jumped to line \(match.line).", kind: .warning)
+                setStatus(LF("Text changed — jumped to line %d.", match.line), kind: .warning)
             }
             host?.findHostFocusEditor()
 
@@ -615,7 +625,7 @@ final class FindWindowController: NSObject, NSWindowDelegate {
                 $0.url?.standardizedFileURL == url.standardizedFileURL
             }) else {
                 NSSound.beep()
-                setStatus("Could not open \(url.lastPathComponent).", kind: .warning)
+                setStatus(LF("Could not open %@.", url.lastPathComponent), kind: .warning)
                 return
             }
             let range = NSRange(location: match.byteStart, length: max(0, match.byteEnd - match.byteStart))
@@ -647,12 +657,12 @@ final class FindWindowController: NSObject, NSWindowDelegate {
         }
 
         guard let result else {
-            setStatus("No document is open.", kind: .warning)
+            setStatus(L("No document is open."), kind: .warning)
             return
         }
         switch result.status {
         case .ok:
-            setStatus("Replaced 1 occurrence.", kind: .info)
+            setStatus(L("Replaced 1 occurrence."), kind: .info)
             host?.findHostRefresh()
             // Move on to the next match, like notepad--'s Replace button.
             _ = session.find(query: query, forward: !query.backward)
@@ -670,7 +680,7 @@ final class FindWindowController: NSObject, NSWindowDelegate {
         }
 
         guard let doc = store.activeDocument else {
-            setStatus("No document is open.", kind: .warning)
+            setStatus(L("No document is open."), kind: .warning)
             return
         }
         let count = session.count(query: query)?.count ?? 0
@@ -685,7 +695,7 @@ final class FindWindowController: NSObject, NSWindowDelegate {
             report(result.status, text: query.text)
             return
         }
-        setStatus("Replaced \(result.count) occurrence\(result.count == 1 ? "" : "s").", kind: .info)
+        setStatus(result.count == 1 ? L("Replaced 1 occurrence.") : LF("Replaced %d occurrences.", result.count), kind: .info)
         host?.findHostRefresh()
     }
 
@@ -694,18 +704,18 @@ final class FindWindowController: NSObject, NSWindowDelegate {
         let text = pane.searchField.stringValue
         guard !text.isEmpty else {
             NSSound.beep()
-            setStatus("Enter text to find.", kind: .warning)
+            setStatus(L("Enter text to find."), kind: .warning)
             return
         }
         guard let doc = store.activeDocument else {
-            setStatus("No document is open.", kind: .warning)
+            setStatus(L("No document is open."), kind: .warning)
             return
         }
         let selStart = doc.editor.selectionStart
         let selEnd = doc.editor.selectionEnd
         guard selEnd > selStart else {
             NSSound.beep()
-            setStatus("Select the text to replace first.", kind: .warning)
+            setStatus(L("Select the text to replace first."), kind: .warning)
             return
         }
 
@@ -741,7 +751,9 @@ final class FindWindowController: NSObject, NSWindowDelegate {
             report(result.status, text: query.text)
             return
         }
-        setStatus("Replaced \(result.count) occurrence\(result.count == 1 ? "" : "s") in the selection.",
+        setStatus(result.count == 1
+                    ? L("Replaced 1 occurrence in the selection.")
+                    : LF("Replaced %d occurrences in the selection.", result.count),
                   kind: .info)
         host?.findHostRefresh()
     }
@@ -773,18 +785,30 @@ final class FindWindowController: NSObject, NSWindowDelegate {
             replaced += Int(result.count)
             if result.count > 0 { filesChanged += 1 }
         }
-        setStatus("Replaced \(replaced) occurrence\(replaced == 1 ? "" : "s") in \(filesChanged) document\(filesChanged == 1 ? "" : "s").",
-                  kind: .info)
+        let key: String
+        if filesChanged == 1 {
+            key = replaced == 1 ? "Replaced 1 occurrence in 1 document."
+                                : "Replaced %d occurrences in 1 document."
+        } else {
+            key = replaced == 1 ? "Replaced 1 occurrence in %d documents."
+                                : "Replaced %d occurrences in %d documents."
+        }
+        setStatus(LF(key, replaced, filesChanged), kind: .info)
         host?.findHostRefreshAll()
     }
 
     private func confirmReplaceAll(count: Int, fileCount: Int) -> Bool {
         let alert = NSAlert()
-        alert.messageText = "Replace \(count) occurrence\(count == 1 ? "" : "s")"
-            + (fileCount > 1 ? " in \(fileCount) documents" : "") + "?"
-        alert.informativeText = "This replaces all matches in the selected scope. It can be undone per document."
-        alert.addButton(withTitle: "Replace All")
-        alert.addButton(withTitle: "Cancel")
+        if fileCount > 1 {
+            alert.messageText = LF("Replace %d occurrences in %d documents?", count, fileCount)
+        } else if count == 1 {
+            alert.messageText = L("Replace 1 occurrence?")
+        } else {
+            alert.messageText = LF("Replace %d occurrences?", count)
+        }
+        alert.informativeText = L("This replaces all matches in the selected scope. It can be undone per document.")
+        alert.addButton(withTitle: L("Replace All"))
+        alert.addButton(withTitle: L("Cancel"))
         return alert.runModal() == .alertFirstButtonReturn
     }
 
@@ -793,11 +817,11 @@ final class FindWindowController: NSObject, NSWindowDelegate {
     func performMarkAll(colorIndex: Int, addBookmarks: Bool) {
         guard let query = typedQuery(from: queryPane) else { return }
         guard let result = session.markAll(query: query, colorIndex: colorIndex, addBookmarks: addBookmarks) else {
-            setStatus("No document is open.", kind: .warning)
+            setStatus(L("No document is open."), kind: .warning)
             return
         }
         if result.status == .ok {
-            setStatus("Marked \(result.count) occurrence\(result.count == 1 ? "" : "s").", kind: .info)
+            setStatus(result.count == 1 ? L("Marked 1 occurrence.") : LF("Marked %d occurrences.", result.count), kind: .info)
             host?.findHostRefresh()
         } else {
             report(result.status, text: query.text)
@@ -806,7 +830,7 @@ final class FindWindowController: NSObject, NSWindowDelegate {
 
     func clearMarks(all: Bool, colorIndex: Int) {
         session.clearMarks(all: all, colorIndex: colorIndex)
-        setStatus(all ? "Cleared all marks." : "Cleared mark color \(colorIndex + 1).", kind: .info)
+        setStatus(all ? L("Cleared all marks.") : LF("Cleared mark color %d.", colorIndex + 1), kind: .info)
         host?.findHostRefresh()
     }
 
@@ -858,6 +882,22 @@ final class FindWindowController: NSObject, NSWindowDelegate {
 
     func clearFindHistory() {
         clearHistory()
+    }
+
+    // MARK: - Localization
+
+    /// Applies the current UI language to the window and its panes in place.
+    func applyLocalization() {
+        panel.title = L("Find and Replace")
+        for tab in FindTab.allCases {
+            tabControl.setLabel(tab.title, forSegment: tab.rawValue)
+        }
+        findPane.applyLocalization()
+        replacePane.applyLocalization()
+        markPane.applyLocalization()
+        settingsPane.applyLocalization()
+        rebuildFooter(for: currentTab)
+        setStatus("", kind: .info)
     }
 
     func windowWillClose(_ notification: Notification) {

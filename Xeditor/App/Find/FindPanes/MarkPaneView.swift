@@ -52,8 +52,8 @@ final class MarkPaneView: FindPaneBase {
         for index in 0..<5 {
             let chip = MarkColorChipView()
             chip.isSelected = index == selected
-            chip.toolTip = "Color \(index + 1)"
-            chip.setAccessibilityLabel("Mark color \(index + 1)")
+            chip.toolTip = LF("Color %d", index + 1)
+            chip.setAccessibilityLabel(LF("Color %d", index + 1))
             chip.setAccessibilityRole(.button)
             chip.onSelect = { [weak self] in self?.selectColor(index) }
             chip.widthAnchor.constraint(equalToConstant: 26).isActive = true
@@ -61,23 +61,32 @@ final class MarkPaneView: FindPaneBase {
             chips.append(chip)
             chipViews.append(chip)
         }
-        let colors = FindUI.horizontal([FindUI.inlineLabel("Color")] + chipViews + [FindUI.spacer()],
+        let colorLabel = bindTitle(FindUI.inlineLabel("Color"), "Color")
+        let colors = FindUI.horizontal([colorLabel] + chipViews + [FindUI.spacer()],
                                        spacing: 8)
 
-        let copyMatches = FindUI.footerButton("Copy Matches", target: self, action: #selector(copyMatches),
-                                              toolTip: "Copy all matched text to the clipboard")
-        let clearThisColor = FindUI.footerButton("Clear Color", target: self,
-                                                 action: #selector(clearThisColor),
-                                                 toolTip: "Remove marks of the selected color")
-        let clearAllMarks = FindUI.footerButton("Clear All", target: self,
-                                                action: #selector(clearAllMarks),
-                                                toolTip: "Remove all marks")
+        let copyMatches = bindToolTip(bindTitle(FindUI.footerButton("Copy Matches", target: self,
+                                                                    action: #selector(copyMatches)),
+                                                "Copy Matches"),
+                                      "Copy all matched text to the clipboard")
+        let clearThisColor = bindToolTip(bindTitle(FindUI.footerButton("Clear Color", target: self,
+                                                                       action: #selector(clearThisColor)),
+                                                   "Clear Color"),
+                                         "Remove marks of the selected color")
+        let clearAllMarks = bindToolTip(bindTitle(FindUI.footerButton("Clear All", target: self,
+                                                                      action: #selector(clearAllMarks)),
+                                                  "Clear All"),
+                                        "Remove all marks")
 
-        let markBookmarks = FindUI.footerButton("Mark + Bookmark", target: self,
-                                                action: #selector(markWithBookmarks),
-                                                toolTip: "Mark all matches and add bookmarks on their lines")
-        let markAll = FindUI.footerButton("Mark All", target: self, action: #selector(markAll),
-                                          isDefault: true, toolTip: "Mark all matches")
+        let markBookmarks = bindToolTip(bindTitle(FindUI.footerButton("Mark + Bookmark", target: self,
+                                                                      action: #selector(markWithBookmarks)),
+                                                  "Mark + Bookmark"),
+                                        "Mark all matches and add bookmarks on their lines")
+        let markAll = bindToolTip(bindTitle(FindUI.footerButton("Mark All", target: self,
+                                                                action: #selector(markAll),
+                                                                isDefault: true),
+                                            "Mark All"),
+                                  "Mark all matches")
 
         setFooter(leading: [copyMatches, clearThisColor, clearAllMarks],
                   trailing: [markBookmarks, markAll])
@@ -88,6 +97,14 @@ final class MarkPaneView: FindPaneBase {
 
     required init?(coder: NSCoder) {
         fatalError("init(coder:) has not been implemented")
+    }
+
+    override func applyLocalization() {
+        super.applyLocalization()
+        for (index, chip) in chips.enumerated() {
+            chip.toolTip = LF("Color %d", index + 1)
+            chip.setAccessibilityLabel(LF("Color %d", index + 1))
+        }
     }
 
     override func viewDidChangeEffectiveAppearance() {

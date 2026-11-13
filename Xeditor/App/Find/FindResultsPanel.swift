@@ -116,6 +116,7 @@ private final class ResultsTextView: NSTextView {
 @MainActor
 final class FindResultsPanel: NSView {
     private let headerLabel = NSTextField(labelWithString: "")
+    private let closeButton = NSButton()
     private let summaryLabel = NSTextField(labelWithString: "")
     private let scrollView = NSScrollView()
     private let textView = ResultsTextView(frame: .zero)
@@ -145,14 +146,16 @@ final class FindResultsPanel: NSView {
         headerLabel.font = .systemFont(ofSize: 13, weight: .semibold)
         headerLabel.textColor = .labelColor
         headerLabel.lineBreakMode = .byTruncatingTail
-        headerLabel.stringValue = "Search Results"
+        headerLabel.stringValue = L("Search Results")
 
         summaryLabel.font = .systemFont(ofSize: 12)
         summaryLabel.textColor = .secondaryLabelColor
         summaryLabel.lineBreakMode = .byTruncatingTail
         summaryLabel.maximumNumberOfLines = 1
 
-        let closeButton = NSButton(title: "Close", target: self, action: #selector(closeClicked))
+        closeButton.title = L("Close")
+        closeButton.target = self
+        closeButton.action = #selector(closeClicked)
         closeButton.bezelStyle = .rounded
         closeButton.controlSize = .small
         closeButton.font = .systemFont(ofSize: 11)
@@ -263,9 +266,17 @@ final class FindResultsPanel: NSView {
         groupByID = [:]
         renderedLines = 0
         syncTextViewState()
-        headerLabel.stringValue = "No results."
+        headerLabel.stringValue = L("No results.")
         summaryLabel.stringValue = ""
         summaryLabel.isHidden = true
+    }
+
+    /// Rebuilds the header and the rendered lines after a language change,
+    /// keeping the current results and fold state.
+    func applyLocalization() {
+        closeButton.title = L("Close")
+        updateHeader()
+        renderAll()
     }
 
     private func renderAll() {
@@ -339,17 +350,27 @@ final class FindResultsPanel: NSView {
 
     private func updateHeader() {
         guard let model else {
-            headerLabel.stringValue = "No results."
+            headerLabel.stringValue = L("No results.")
             summaryLabel.stringValue = ""
             summaryLabel.isHidden = true
             return
         }
         let hits = model.totalHits
         let files = model.groups.count
-        headerLabel.stringValue = "Search Results — \(hits) hit\(hits == 1 ? "" : "s")"
-        var detail = "\(model.querySummary)  —  \(hits) hit\(hits == 1 ? "" : "s") in \(files) file\(files == 1 ? "" : "s")"
-        if model.truncated { detail += "  (truncated)" }
-        summaryLabel.stringValue = detail
+        headerLabel.stringValue = hits == 1
+            ? L("Search Results — 1 hit")
+            : LF("Search Results — %d hits", hits)
+        let detail: String
+        if hits == 1 {
+            detail = files == 1
+                ? LF("%@ — 1 hit in 1 file", model.querySummary)
+                : LF("%@ — 1 hit in %d files", model.querySummary, files)
+        } else {
+            detail = files == 1
+                ? LF("%@ — %d hits in 1 file", model.querySummary, hits)
+                : LF("%@ — %d hits in %d files", model.querySummary, hits, files)
+        }
+        summaryLabel.stringValue = model.truncated ? detail + L("  (truncated)") : detail
         summaryLabel.isHidden = false
     }
 
@@ -368,7 +389,7 @@ final class FindResultsPanel: NSView {
 
     private func appendMatchLine(_ match: SearchResultMatch) {
         let line = NSMutableAttributedString(
-            string: "Line \(match.line):  ",
+            string: LF("Line %d:", match.line) + "  ",
             attributes: [
                 .font: NSFont.monospacedDigitSystemFont(ofSize: 11, weight: .regular),
                 .foregroundColor: NSColor.tertiaryLabelColor

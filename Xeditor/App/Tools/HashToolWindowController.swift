@@ -47,7 +47,7 @@ final class HashToolWindowController: ToolWindowController {
 
     init(store: DocumentStore) {
         self.store = store
-        super.init(title: "MD5 / SHA",
+        super.init(title: L("MD5 / SHA"),
                    size: NSSize(width: 700, height: 470),
                    minSize: NSSize(width: 520, height: 380),
                    autosaveName: "XeditorHashTool")
@@ -75,10 +75,10 @@ final class HashToolWindowController: ToolWindowController {
         let inputScroll = ToolUI.wrap(inputTextView)
         inputScroll.heightAnchor.constraint(equalToConstant: 110).isActive = true
 
-        hashTextButton = ToolUI.button("Hash Text", target: self, action: #selector(hashTextAction))
+        hashTextButton = ToolUI.button(L("Hash Text"), target: self, action: #selector(hashTextAction))
         hashTextButton.keyEquivalent = "\r"
 
-        hashFileButton.title = "Hash File…"
+        hashFileButton.title = L("Hash File…")
         hashFileButton.bezelStyle = .rounded
         hashFileButton.target = self
         hashFileButton.action = #selector(hashFileAction)
@@ -99,7 +99,7 @@ final class HashToolWindowController: ToolWindowController {
         statusLabel.lineBreakMode = .byTruncatingTail
         statusLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
 
-        var rows: [NSView] = [ToolUI.sectionLabel("Text to hash"), inputScroll, buttonRow]
+        var rows: [NSView] = [ToolUI.sectionLabel(L("Text to hash")), inputScroll, buttonRow]
         rows.append(sourceLabel)
 
         let separator = NSBox()
@@ -162,7 +162,7 @@ final class HashToolWindowController: ToolWindowController {
         field.setContentHuggingPriority(NSLayoutConstraint.Priority(1), for: .horizontal)
         resultFields[algorithm] = field
 
-        let copy = ToolUI.button("Copy", target: self, action: #selector(copyHash(_:)))
+        let copy = ToolUI.button(L("Copy"), target: self, action: #selector(copyHash(_:)))
         copy.tag = index
         copy.controlSize = .small
         copy.isEnabled = false
@@ -184,7 +184,7 @@ final class HashToolWindowController: ToolWindowController {
         let selection = editor.selectedText()
         guard !selection.isEmpty, selection.count <= 1_000_000 else { return }
         inputTextView.string = selection
-        sourceLabel.stringValue = "Source: editor selection (\(selection.count) characters)"
+        sourceLabel.stringValue = LF("Source: editor selection (%d characters)", selection.count)
         hashTextAction()
     }
 
@@ -192,7 +192,7 @@ final class HashToolWindowController: ToolWindowController {
         guard !isBusy else { return }
         let text = inputTextView.string
         guard !text.isEmpty else {
-            showStatus("Nothing to hash.", isError: true)
+            showStatus(L("Nothing to hash."), isError: true)
             NSSound.beep()
             return
         }
@@ -201,7 +201,10 @@ final class HashToolWindowController: ToolWindowController {
         for algorithm in HashAlgorithm.allCases {
             values[algorithm] = algorithm.hexDigest(of: data)
         }
-        apply(values, source: "Source: \(data.count) byte\(data.count == 1 ? "" : "s") of UTF-8 text")
+        let sourceKey = data.count == 1
+            ? "Source: 1 byte of UTF-8 text"
+            : "Source: %d bytes of UTF-8 text"
+        apply(values, source: LF(sourceKey, data.count))
     }
 
     @objc private func hashFileAction() {
@@ -210,14 +213,14 @@ final class HashToolWindowController: ToolWindowController {
         panel.canChooseFiles = true
         panel.canChooseDirectories = false
         panel.allowsMultipleSelection = false
-        panel.title = "Hash File"
+        panel.title = L("Hash File")
         guard panel.runModal() == .OK, let url = panel.url else { return }
         hashFile(at: url)
     }
 
     private func hashFile(at url: URL) {
         setBusy(true)
-        showStatus("Hashing \(url.lastPathComponent)…", isError: false)
+        showStatus(LF("Hashing %@…", url.lastPathComponent), isError: false)
 
         Task.detached(priority: .userInitiated) {
             let result = Self.computeHashes(of: url)
@@ -262,10 +265,10 @@ final class HashToolWindowController: ToolWindowController {
         case .success(let values):
             let attributes = try? FileManager.default.attributesOfItem(atPath: url.path)
             let size = (attributes?[.size] as? NSNumber)?.intValue
-            let sizeText = size.map { " · \($0) bytes" } ?? ""
-            apply(values, source: "Source: \(url.lastPathComponent)\(sizeText)")
+            let sizeText = size.map { " · " + LF("%d bytes", $0) } ?? ""
+            apply(values, source: LF("Source: %@", url.lastPathComponent + sizeText))
         case .failure(let error):
-            showStatus("Could not hash \(url.lastPathComponent): \(error.localizedDescription)", isError: true)
+            showStatus(LF("Could not hash %@: %@", url.lastPathComponent, error.localizedDescription), isError: true)
         }
     }
 
@@ -280,7 +283,7 @@ final class HashToolWindowController: ToolWindowController {
         let pasteboard = NSPasteboard.general
         pasteboard.clearContents()
         pasteboard.setString(hash, forType: .string)
-        showStatus("\(algorithm.title) copied to the clipboard.", isError: false)
+        showStatus(LF("%@ copied to the clipboard.", algorithm.title), isError: false)
     }
 
     // MARK: - Helpers
@@ -295,7 +298,7 @@ final class HashToolWindowController: ToolWindowController {
             field?.toolTip = hash
             copyButtons[algorithm]?.isEnabled = !hash.isEmpty
         }
-        showStatus("Computed MD5, SHA-1, SHA-256 and SHA-512.", isError: false)
+        showStatus(L("Computed MD5, SHA-1, SHA-256 and SHA-512."), isError: false)
     }
 
     /// SHA-512 is 128 characters; showing it in two halves keeps the window

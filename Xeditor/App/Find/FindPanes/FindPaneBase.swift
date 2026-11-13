@@ -6,6 +6,8 @@ final class FindFieldBox: NSView {
     let textField = NSTextField()
     private let iconView = NSImageView()
     private let historyButton = NSButton()
+    private let toolTipKey: String
+    private let placeholderKey: String
     private var history: [String] = []
 
     var onClearHistory: (() -> Void)?
@@ -14,6 +16,8 @@ final class FindFieldBox: NSView {
     }
 
     init(symbol: String, toolTip: String, placeholder: String) {
+        toolTipKey = toolTip
+        placeholderKey = placeholder
         super.init(frame: .zero)
 
         textField.isBordered = false
@@ -21,7 +25,7 @@ final class FindFieldBox: NSView {
         textField.drawsBackground = false
         textField.focusRingType = .none
         textField.font = .systemFont(ofSize: 13)
-        textField.placeholderString = placeholder
+        textField.placeholderString = L(placeholder)
         textField.cell?.usesSingleLineMode = true
         textField.lineBreakMode = .byTruncatingTail
         textField.setContentHuggingPriority(.defaultLow, for: .horizontal)
@@ -34,10 +38,10 @@ final class FindFieldBox: NSView {
         historyButton.bezelStyle = .inline
         historyButton.isBordered = false
         historyButton.image = NSImage(systemSymbolName: "chevron.down",
-                                      accessibilityDescription: toolTip)
+                                      accessibilityDescription: L(toolTip))
         historyButton.imagePosition = .imageOnly
         historyButton.contentTintColor = .secondaryLabelColor
-        historyButton.toolTip = toolTip
+        historyButton.toolTip = L(toolTip)
         historyButton.target = self
         historyButton.action = #selector(showHistory)
         historyButton.setContentHuggingPriority(.required, for: .horizontal)
@@ -72,6 +76,13 @@ final class FindFieldBox: NSView {
         history = items
     }
 
+    func applyLocalization() {
+        textField.placeholderString = L(placeholderKey)
+        historyButton.toolTip = L(toolTipKey)
+        historyButton.image = NSImage(systemSymbolName: "chevron.down",
+                                      accessibilityDescription: L(toolTipKey))
+    }
+
     override func draw(_ dirtyRect: NSRect) {
         if let editor = textField.currentEditor(), window?.firstResponder === editor {
             isFocused = true
@@ -100,7 +111,7 @@ final class FindFieldBox: NSView {
     @objc private func showHistory(_ sender: NSButton) {
         let menu = NSMenu()
         if history.isEmpty {
-            let empty = NSMenuItem(title: "No History", action: nil, keyEquivalent: "")
+            let empty = NSMenuItem(title: L("No History"), action: nil, keyEquivalent: "")
             empty.isEnabled = false
             menu.addItem(empty)
         } else {
@@ -113,7 +124,7 @@ final class FindFieldBox: NSView {
                 menu.addItem(item)
             }
             menu.addItem(.separator())
-            let clear = NSMenuItem(title: "Clear History",
+            let clear = NSMenuItem(title: L("Clear History"),
                                    action: #selector(clearHistory),
                                    keyEquivalent: "")
             clear.target = self
@@ -155,7 +166,12 @@ class FindPaneBase: NSView, NSTextFieldDelegate {
     private(set) var footerTrailing: [NSView] = []
 
     private let regexHintButton = NSButton()
-    private lazy var regexHelpPopover = RegexHelpPopover.make()
+    private var regexHelpPopover: RegexHelpPopover?
+
+    /// Footer views whose title / tooltip should follow the app language. Kept
+    /// alongside the footer arrays so the panes can create plain controls.
+    private var titleBindings: [(NSView, String)] = []
+    private var toolTipBindings: [(NSControl, String)] = []
 
     init(controller: FindWindowController,
          showsReplacement: Bool,
@@ -240,6 +256,61 @@ class FindPaneBase: NSView, NSTextFieldDelegate {
         footerTrailing = trailing
     }
 
+    /// Registers a control whose title follows the app language. The key is the
+    /// English title, which is also used for the initial value.
+    @discardableResult
+    func bindTitle<V: NSView>(_ view: V, _ key: String) -> V {
+        titleBindings.append((view, key))
+        applyTitle(view, key)
+        return view
+    }
+
+    /// Registers a control whose tooltip and accessibility label follow the
+    /// app language.
+    @discardableResult
+    func bindToolTip<V: NSControl>(_ view: V, _ key: String) -> V {
+        toolTipBindings.append((view, key))
+        applyToolTip(view, key)
+        return view
+    }
+
+    private func applyTitle(_ view: NSView, _ key: String) {
+        let text = L(key)
+        if let button = view as? NSButton {
+            button.title = text
+        } else if let label = view as? NSTextField {
+            label.stringValue = text
+        }
+    }
+
+    private func applyToolTip(_ view: NSControl, _ key: String) {
+        let text = L(key)
+        view.toolTip = text
+        view.setAccessibilityLabel(text)
+    }
+
+    /// Refreshes every registered label, button and tooltip. Subclasses that
+    /// build their own controls override this and call `super`.
+    func applyLocalization() {
+        for (view, key) in titleBindings {
+            applyTitle(view, key)
+        }
+        for (control, key) in toolTipBindings {
+            applyToolTip(control, key)
+        }
+        searchBox.applyLocalization()
+        replaceBox?.applyLocalization()
+        optionsView.applyLocalization()
+
+        regexHelpPopover?.close()
+        regexHelpPopover = nil
+        let syntax = L("Regular expression syntax")
+        regexHintButton.image = NSImage(systemSymbolName: "questionmark.circle",
+                                        accessibilityDescription: syntax)
+        regexHintButton.toolTip = L("Regular expression syntax reference")
+        regexHintButton.setAccessibilityLabel(L("Regular expression syntax reference"))
+    }
+
     func activate() {
         optionsView.reload()
         reloadHistory()
@@ -274,10 +345,11 @@ class FindPaneBase: NSView, NSTextFieldDelegate {
         button.bezelStyle = .inline
         button.isBordered = false
         button.image = NSImage(systemSymbolName: "questionmark.circle",
-                               accessibilityDescription: "Regular expression syntax")
+                               accessibilityDescription: L("Regular expression syntax"))
         button.imagePosition = .imageOnly
         button.contentTintColor = .secondaryLabelColor
-        button.toolTip = "Regular expression syntax reference"
+        button.toolTip = L("Regular expression syntax reference")
+        button.setAccessibilityLabel(L("Regular expression syntax reference"))
         button.target = self
         button.action = #selector(showRegexHelp(_:))
         button.setContentHuggingPriority(.required, for: .horizontal)
@@ -285,11 +357,13 @@ class FindPaneBase: NSView, NSTextFieldDelegate {
     }
 
     @objc private func showRegexHelp(_ sender: NSButton) {
-        if regexHelpPopover.isShown {
-            regexHelpPopover.close()
-        } else {
-            regexHelpPopover.show(relativeTo: sender.bounds, of: sender, preferredEdge: .maxY)
+        if let popover = regexHelpPopover, popover.isShown {
+            popover.close()
+            return
         }
+        let popover = regexHelpPopover ?? RegexHelpPopover.make()
+        regexHelpPopover = popover
+        popover.show(relativeTo: sender.bounds, of: sender, preferredEdge: .maxY)
     }
 
     // MARK: - NSTextFieldDelegate

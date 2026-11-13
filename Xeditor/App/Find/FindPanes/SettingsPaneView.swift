@@ -11,15 +11,19 @@ final class SettingsPaneView: NSView, NSTextFieldDelegate {
     private let historyStepper = NSStepper()
     private let followSearchRadio: NSButton
     private let followSelectionRadio: NSButton
+    private let historyHeader = FindUI.sectionHeader(L("Search History"))
+    private let hotkeyHeader = FindUI.sectionHeader(L("⌘G Behavior"))
+    private let maxItemsLabel = FindUI.inlineLabel(L("Max items:"))
+    private let clearHistoryButton = FindUI.button(L("Clear History"), target: nil, action: nil)
 
     private(set) var footerLeading: [NSView] = []
     private(set) var footerTrailing: [NSView] = []
 
     init(controller: FindWindowController) {
         self.controller = controller
-        followSearchRadio = FindUI.radio("Use the last search term",
+        followSearchRadio = FindUI.radio(L("Use the last search term"),
                                          target: nil, action: nil, on: true)
-        followSelectionRadio = FindUI.radio("Use the selected text",
+        followSelectionRadio = FindUI.radio(L("Use the selected text"),
                                             target: nil, action: nil, on: false)
 
         super.init(frame: .zero)
@@ -36,12 +40,13 @@ final class SettingsPaneView: NSView, NSTextFieldDelegate {
         historyStepper.target = self
         historyStepper.action = #selector(historyStepperChanged)
 
-        let clearHistory = FindUI.button("Clear History", target: self, action: #selector(clearHistory))
-        clearHistory.controlSize = .small
-        clearHistory.font = .systemFont(ofSize: 11)
-        let historyRow = FindUI.horizontal([FindUI.inlineLabel("Max items:"),
+        clearHistoryButton.target = self
+        clearHistoryButton.action = #selector(clearHistory)
+        clearHistoryButton.controlSize = .small
+        clearHistoryButton.font = .systemFont(ofSize: 11)
+        let historyRow = FindUI.horizontal([maxItemsLabel,
                                             historyField, historyStepper,
-                                            FindUI.spacer(), clearHistory], spacing: 8)
+                                            FindUI.spacer(), clearHistoryButton], spacing: 8)
 
         for radio in [followSearchRadio, followSelectionRadio] {
             radio.target = self
@@ -51,9 +56,9 @@ final class SettingsPaneView: NSView, NSTextFieldDelegate {
         }
         let radios = FindUI.verticalFill([followSearchRadio, followSelectionRadio], spacing: 8)
 
-        let stack = FindUI.verticalFill([FindUI.sectionHeader("Search History"), FindUI.rule(),
+        let stack = FindUI.verticalFill([historyHeader, FindUI.rule(),
                                          historyRow,
-                                         FindUI.sectionHeader("⌘G Behavior"), FindUI.rule(),
+                                         hotkeyHeader, FindUI.rule(),
                                          radios],
                                         spacing: 8)
         stack.setCustomSpacing(16, after: historyRow)
@@ -78,6 +83,15 @@ final class SettingsPaneView: NSView, NSTextFieldDelegate {
     func activate() {
         reload()
         window?.makeFirstResponder(historyField)
+    }
+
+    func applyLocalization() {
+        historyHeader.stringValue = L("Search History")
+        hotkeyHeader.stringValue = L("⌘G Behavior")
+        maxItemsLabel.stringValue = L("Max items:")
+        clearHistoryButton.title = L("Clear History")
+        followSearchRadio.title = L("Use the last search term")
+        followSelectionRadio.title = L("Use the selected text")
     }
 
     func reload() {

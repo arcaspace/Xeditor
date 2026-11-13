@@ -61,7 +61,7 @@ final class NativeTabItemView: NSView {
         closeButton.bezelStyle = .regularSquare
         closeButton.isBordered = false
         closeButton.imagePosition = .imageOnly
-        if let img = NSImage(systemSymbolName: "xmark", accessibilityDescription: "Close Tab") {
+        if let img = NSImage(systemSymbolName: "xmark", accessibilityDescription: L("Close Tab")) {
             let conf = NSImage.SymbolConfiguration(pointSize: 9, weight: .bold)
             closeButton.image = img.withSymbolConfiguration(conf)
         }
@@ -185,12 +185,12 @@ final class NativeTabItemView: NSView {
     }
 
     override func menu(for event: NSEvent) -> NSMenu? {
-        let menu = NSMenu(title: "Tab")
-        let closeItem = NSMenuItem(title: "Close Tab", action: #selector(menuClose), keyEquivalent: "")
+        let menu = NSMenu(title: L("Tab"))
+        let closeItem = NSMenuItem(title: L("Close Tab"), action: #selector(menuClose), keyEquivalent: "")
         closeItem.target = self
         menu.addItem(closeItem)
 
-        let closeOthersItem = NSMenuItem(title: "Close Other Tabs", action: #selector(menuCloseOthers), keyEquivalent: "")
+        let closeOthersItem = NSMenuItem(title: L("Close Other Tabs"), action: #selector(menuCloseOthers), keyEquivalent: "")
         closeOthersItem.target = self
         menu.addItem(closeOthersItem)
         return menu
@@ -240,14 +240,14 @@ final class NativeTabBarView: NSView {
         newTabButton.bezelStyle = .regularSquare
         newTabButton.isBordered = false
         newTabButton.imagePosition = .imageOnly
-        if let img = NSImage(systemSymbolName: "plus", accessibilityDescription: "New Tab") {
+        if let img = NSImage(systemSymbolName: "plus", accessibilityDescription: L("New Tab")) {
             let conf = NSImage.SymbolConfiguration(pointSize: 11, weight: .medium)
             newTabButton.image = img.withSymbolConfiguration(conf)
         }
         newTabButton.contentTintColor = .secondaryLabelColor
         newTabButton.target = self
         newTabButton.action = #selector(didClickNewTab)
-        newTabButton.toolTip = "New Tab (⌘N)"
+        newTabButton.toolTip = L("New Tab (⌘T)")
         addSubview(newTabButton)
 
         // Bottom border line
@@ -321,6 +321,14 @@ final class NativeTabBarView: NSView {
     func updateDocument(id: EditorDocument.ID) {
         if let tab = tabViews.first(where: { $0.document.id == id }) {
             tab.updateContent()
+        }
+    }
+
+    func applyLocalization() {
+        newTabButton.toolTip = L("New Tab (⌘T)")
+        if let img = NSImage(systemSymbolName: "plus", accessibilityDescription: L("New Tab")) {
+            let conf = NSImage.SymbolConfiguration(pointSize: 11, weight: .medium)
+            newTabButton.image = img.withSymbolConfiguration(conf)
         }
     }
 

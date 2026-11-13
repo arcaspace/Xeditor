@@ -20,26 +20,26 @@ final class CompareToolWindowController: ToolWindowController {
         var errorDescription: String? {
             switch self {
             case .missingSource(let side):
-                return "Choose a file for the \(side) pane first."
+                return LF("Choose a file for the %@ pane first.", L(side))
             case .unreadable(let name):
-                return "“\(name)” could not be decoded as text."
+                return LF("“%@” could not be decoded as text.", name)
             case .documentClosed:
-                return "That document is no longer open. Choose it again."
+                return L("That document is no longer open. Choose it again.")
             case .tooLarge:
-                return "The input is too large to compare (limit 60,000 lines or 20 MB per file)."
+                return L("The input is too large to compare (limit 60,000 lines or 20 MB per file).")
             }
         }
     }
 
     private let store: DocumentStore
 
-    private let leftNameLabel = NSTextField(labelWithString: "No file selected")
-    private let rightNameLabel = NSTextField(labelWithString: "No file selected")
-    private let statsLabel = NSTextField(labelWithString: "Choose two files to compare them.")
+    private let leftNameLabel = NSTextField(labelWithString: L("No file selected"))
+    private let rightNameLabel = NSTextField(labelWithString: L("No file selected"))
+    private let statsLabel = NSTextField(labelWithString: L("Choose two files to compare them."))
     private let compareButton = NSButton()
-    private let ignoreWhitespaceCheckbox = NSButton(checkboxWithTitle: "Ignore whitespace",
+    private let ignoreWhitespaceCheckbox = NSButton(checkboxWithTitle: L("Ignore whitespace"),
                                                     target: nil, action: nil)
-    private let ignoreCaseCheckbox = NSButton(checkboxWithTitle: "Ignore case",
+    private let ignoreCaseCheckbox = NSButton(checkboxWithTitle: L("Ignore case"),
                                               target: nil, action: nil)
 
     private let leftTextView = DiffTextView()
@@ -54,7 +54,7 @@ final class CompareToolWindowController: ToolWindowController {
 
     init(store: DocumentStore) {
         self.store = store
-        super.init(title: "Compare Files",
+        super.init(title: L("Compare Files"),
                    size: NSSize(width: 1060, height: 680),
                    minSize: NSSize(width: 640, height: 320),
                    autosaveName: "XeditorCompareTool")
@@ -79,16 +79,16 @@ final class CompareToolWindowController: ToolWindowController {
     private func buildUI() {
         guard let content = window?.contentView else { return }
 
-        let leftRow = makeSourceRow(title: "Left", nameLabel: leftNameLabel, tag: 0)
-        let rightRow = makeSourceRow(title: "Right", nameLabel: rightNameLabel, tag: 1)
+        let leftRow = makeSourceRow(title: L("Left"), nameLabel: leftNameLabel, tag: 0)
+        let rightRow = makeSourceRow(title: L("Right"), nameLabel: rightNameLabel, tag: 1)
 
-        compareButton.title = "Compare"
+        compareButton.title = L("Compare")
         compareButton.bezelStyle = .rounded
         compareButton.target = self
         compareButton.action = #selector(compareAction)
         compareButton.keyEquivalent = "\r"
 
-        let swapSources = ToolUI.button("Swap Sides", target: self, action: #selector(swapSidesAction))
+        let swapSources = ToolUI.button(L("Swap Sides"), target: self, action: #selector(swapSidesAction))
 
         ignoreWhitespaceCheckbox.target = self
         ignoreWhitespaceCheckbox.action = #selector(optionsChanged)
@@ -172,12 +172,12 @@ final class CompareToolWindowController: ToolWindowController {
         nameLabel.setContentHuggingPriority(NSLayoutConstraint.Priority(1), for: .horizontal)
         nameLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
 
-        let current = ToolUI.button("Use Current Document",
+        let current = ToolUI.button(L("Use Current Document"),
                                     target: self, action: #selector(useCurrentDocumentAction(_:)))
         current.controlSize = .small
         current.tag = tag
 
-        let choose = ToolUI.button("Choose…", target: self, action: #selector(chooseFileAction(_:)))
+        let choose = ToolUI.button(L("Choose…"), target: self, action: #selector(chooseFileAction(_:)))
         choose.controlSize = .small
         choose.tag = tag
 
@@ -227,7 +227,7 @@ final class CompareToolWindowController: ToolWindowController {
         panel.canChooseFiles = true
         panel.canChooseDirectories = false
         panel.allowsMultipleSelection = false
-        panel.title = sender.tag == 0 ? "Choose Left File" : "Choose Right File"
+        panel.title = sender.tag == 0 ? L("Choose Left File") : L("Choose Right File")
         guard panel.runModal() == .OK, let url = panel.url else { return }
         setSource(.file(url), side: sender.tag)
     }
@@ -235,7 +235,7 @@ final class CompareToolWindowController: ToolWindowController {
     @objc private func useCurrentDocumentAction(_ sender: NSButton) {
         guard let document = store.activeDocument else {
             NSSound.beep()
-            showMessage("There is no open document to compare.", isError: true)
+            showMessage(L("There is no open document to compare."), isError: true)
             return
         }
         setSource(.document(document.id), side: sender.tag)
@@ -260,14 +260,14 @@ final class CompareToolWindowController: ToolWindowController {
     private func description(for source: Source) -> String {
         switch source {
         case .none:
-            return "No file selected"
+            return L("No file selected")
         case .file(let url):
             return url.path
         case .document(let id):
             guard let document = store.documents.first(where: { $0.id == id }) else {
-                return "(document closed)"
+                return L("(document closed)")
             }
-            return "\(document.url?.path ?? document.displayName) (open document)"
+            return "\(document.url?.path ?? document.displayName) \(L("(open document)"))"
         }
     }
 
@@ -290,12 +290,12 @@ final class CompareToolWindowController: ToolWindowController {
     @objc private func compareAction() {
         guard hasSource(leftSource) else {
             NSSound.beep()
-            showMessage(CompareError.missingSource("left").localizedDescription, isError: true)
+            showMessage(CompareError.missingSource("Left").localizedDescription, isError: true)
             return
         }
         guard hasSource(rightSource) else {
             NSSound.beep()
-            showMessage(CompareError.missingSource("right").localizedDescription, isError: true)
+            showMessage(CompareError.missingSource("Right").localizedDescription, isError: true)
             return
         }
 
@@ -326,7 +326,7 @@ final class CompareToolWindowController: ToolWindowController {
     private func load(_ source: Source) throws -> (name: String, text: String) {
         switch source {
         case .none:
-            throw CompareError.missingSource("left")
+            throw CompareError.missingSource("Left")
         case .file(let url):
             let attributes = try? FileManager.default.attributesOfItem(atPath: url.path)
             let size = (attributes?[.size] as? NSNumber)?.intValue ?? 0
@@ -369,14 +369,15 @@ final class CompareToolWindowController: ToolWindowController {
         let deleted = rows.filter { $0.kind == .deleted }.count
         let added = rows.filter { $0.kind == .added }.count
 
-        window?.title = "Compare Files — \(leftName) ↔ \(rightName)"
+        window?.title = LF("Compare Files — %@ ↔ %@", leftName, rightName)
 
         if changed + deleted + added == 0 {
-            showMessage("The two inputs are identical.", isError: false)
+            showMessage(L("The two inputs are identical."), isError: false)
         } else {
-            showMessage("\(changed + deleted + added) differing line"
-                        + (changed + deleted + added == 1 ? "" : "s")
-                        + " — \(deleted) removed, \(added) added, \(changed) changed.",
+            let key = changed + deleted + added == 1
+                ? "1 differing line — %d removed, %d added, %d changed."
+                : "%d differing lines — %d removed, %d added, %d changed."
+            showMessage(LF(key, changed + deleted + added, deleted, added, changed),
                         isError: false)
         }
 

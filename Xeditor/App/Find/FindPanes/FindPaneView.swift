@@ -6,21 +6,31 @@ final class FindPaneView: FindPaneBase {
     init(controller: FindWindowController) {
         super.init(controller: controller, showsReplacement: false, optionsVariant: .findReplace)
 
-        let findAllCurrent = FindUI.footerButton("Current File", target: self,
-                                                 action: #selector(findAllCurrent),
-                                                 toolTip: "Find all matches in the current file")
-        let findAllOpen = FindUI.footerButton("Open Files", target: self,
-                                              action: #selector(findAllOpen),
-                                              toolTip: "Find all matches in all open documents")
-        let count = FindUI.footerButton("Count", target: self, action: #selector(countMatches),
-                                        toolTip: "Count matches")
+        let label = bindTitle(FindUI.inlineLabel("Find All in"), "Find All in")
+        let findAllCurrent = bindToolTip(bindTitle(FindUI.footerButton("Current File", target: self,
+                                                                       action: #selector(findAllCurrent)),
+                                                   "Current File"),
+                                         "Find all matches in the current file")
+        let findAllOpen = bindToolTip(bindTitle(FindUI.footerButton("Open Files", target: self,
+                                                                    action: #selector(findAllOpen)),
+                                                "Open Files"),
+                                      "Find all matches in all open documents")
+        let count = bindToolTip(bindTitle(FindUI.footerButton("Count", target: self,
+                                                              action: #selector(countMatches)),
+                                          "Count"),
+                                "Count matches")
 
-        let previous = FindUI.footerButton("Find Previous", target: self, action: #selector(findPrevious),
-                                           toolTip: "Find the previous match (Shift-Return)")
-        let next = FindUI.footerButton("Find Next", target: self, action: #selector(findNext),
-                                       isDefault: true, toolTip: "Find the next match (Return)")
+        let previous = bindToolTip(bindTitle(FindUI.footerButton("Find Previous", target: self,
+                                                                 action: #selector(findPrevious)),
+                                             "Find Previous"),
+                                   "Find the previous match (Shift-Return)")
+        let next = bindToolTip(bindTitle(FindUI.footerButton("Find Next", target: self,
+                                                             action: #selector(findNext),
+                                                             isDefault: true),
+                                         "Find Next"),
+                               "Find the next match (Return)")
 
-        setFooter(leading: [FindUI.inlineLabel("Find All in"), findAllCurrent, findAllOpen, count],
+        setFooter(leading: [label, findAllCurrent, findAllOpen, count],
                   trailing: [previous, next])
 
         installCard()
