@@ -7,8 +7,10 @@ final class FindSession {
     private let store: DocumentStore
     private let settings: FindSettings
 
-    /// Last zero-length match, so ^ / $ searches do not stand still.
-    private var lastZeroMatch: (document: EditorDocument.ID, position: Int)?
+    /// Last zero-length match, so ^ / $ searches do not stand still. Keyed by
+    /// query: changing the search term must not advance past a new match that
+    /// happens to sit at the same position.
+    private var lastZeroMatch: (document: EditorDocument.ID, position: Int, key: String)?
     /// Fixed span for "In selection", captured on the first search.
     private var restrictedRange: (document: EditorDocument.ID, key: String, start: Int, end: Int)?
 
@@ -53,7 +55,8 @@ final class FindSession {
         }
 
         var start = forward ? editor.selectionEnd : editor.selectionStart
-        if let zero = lastZeroMatch, zero.document == doc.id, zero.position == start {
+        if let zero = lastZeroMatch, zero.document == doc.id, zero.position == start,
+           zero.key == queryKey(query) {
             let advanced = forward
                 ? editor.positionAfterPosition(start)
                 : editor.positionBeforePosition(start)
@@ -65,7 +68,7 @@ final class FindSession {
                                       startPosition: start,
                                       forward: forward,
                                       wrap: query.wrap)
-        recordZeroMatch(result.match, document: doc)
+        recordZeroMatch(result.match, document: doc, key: queryKey(query))
         if let match = result.match {
             editor.selectRange(start: match.start, end: match.end)
         }
@@ -110,9 +113,15 @@ final class FindSession {
         guard let match = picked else {
             return XEditorFindResult(status: .notFound, wrapped: false, match: nil)
         }
-        recordZeroMatch(match, document: document)
+        recordZeroMatch(match, document: document, key: queryKey(query))
         editor.selectRange(start: match.start, end: match.end)
         return XEditorFindResult(status: .ok, wrapped: wrapped, match: match)
+    }
+
+    /// Identity of a search, used to invalidate cursor-advance and in-selection
+    /// state when the term or its matching options change.
+    private func queryKey(_ query: SearchQuery) -> String {
+        "\(query.text)|\(query.mode.rawValue)|\(query.matchCase)|\(query.wholeWord)"
     }
 
     private func resetRestrictionIfNeeded(query: SearchQuery, document: EditorDocument) {
@@ -120,16 +129,16 @@ final class FindSession {
             restrictedRange = nil
             return
         }
-        let key = "\(query.text)|\(query.mode.rawValue)|\(query.matchCase)|\(query.wholeWord)"
+        let key = queryKey(query)
         if let existing = restrictedRange, existing.document == document.id, existing.key == key {
             return
         }
         restrictedRange = (document.id, key, document.editor.selectionStart, document.editor.selectionEnd)
     }
 
-    private func recordZeroMatch(_ match: XEditorFindMatch?, document: EditorDocument) {
+    private func recordZeroMatch(_ match: XEditorFindMatch?, document: EditorDocument, key: String) {
         if let match, match.end == match.start {
-            lastZeroMatch = (document.id, Int(match.start))
+            lastZeroMatch = (document.id, Int(match.start), key)
         } else {
             lastZeroMatch = nil
         }
@@ -217,7 +226,8 @@ final class FindSession {
                                               inEnd: end,
                                               maxCount: 200_000)
             var seenLines = Set<Int>()
-            for match in all.matches where seenLines.insert(Int(match.line)).inserted {
+            for match in all.matches where match.end > match.start {
+                guard seenLines.insert(Int(match.line)).inserted else { continue }
                 doc.editor.addBookmark(atLine: Int(match.line))
             }
         }
@@ -225,10 +235,12 @@ final class FindSession {
     }
 
     func clearMarks(all: Bool, colorIndex: Int) {
-        guard let doc = activeDocument else { return }
         if all {
-            doc.editor.clearAllMarkIndicators()
+            for document in store.documents {
+                document.editor.clearAllMarkIndicators()
+            }
         } else {
+            guard let doc = activeDocument else { return }
             doc.editor.clearIndicatorRange(21 + max(0, min(4, colorIndex)))
         }
     }

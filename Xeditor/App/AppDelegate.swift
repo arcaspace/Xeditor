@@ -81,6 +81,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, PreferencesDelegate, G
         if let icon = bundledAppIcon ?? NSApp.applicationIconImage {
             options[.applicationIcon] = icon
         }
+        // The panel appends the build number as "0.2.0 (2)" when CFBundleVersion
+        // is present; the build number is release bookkeeping, not part of the
+        // version users should read, so keep the Version line to the marketing
+        // version alone.
+        options[.version] = ""
         NSApp.orderFrontStandardAboutPanel(options: options)
     }
 
@@ -107,6 +112,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, PreferencesDelegate, G
             windowController?.showWindow(nil)
         }
         return true
+    }
+
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        guard let mainVC = windowController?.mainVC else { return .terminateNow }
+        for document in store.documents where document.isDirty {
+            guard mainVC.confirmSaveIfNeeded(document) else { return .terminateCancel }
+        }
+        return .terminateNow
     }
 
     func applicationWillTerminate(_ notification: Notification) {
@@ -306,11 +319,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, PreferencesDelegate, G
         codecToolController?.close()
         structuredToolController?.close()
         conversionToolController?.close()
+        goToLineController?.close()
         compareToolController = nil
         hashToolController = nil
         codecToolController = nil
         structuredToolController = nil
         conversionToolController = nil
+        goToLineController = nil
     }
 
     @objc func showPreferences(_ sender: Any?) {

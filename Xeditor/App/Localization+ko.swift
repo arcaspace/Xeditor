@@ -352,5 +352,16 @@ extension LocalizationStrings {
         "There is no result to swap.": "바꿀 결과가 없습니다.",
         "Swapped direction.": "방향을 바꿨습니다.",
         "Line %d, column %d: %@": "%d번째 줄, %d번째 열: %@",
+        // MARK: Main window, status bar and save
+        "%d bytes": "%d바이트",
+        "Ln %d, Col %d": "%d행, %d열",
+        "%d lines": "%d줄",
+        "Reload this document in the selected encoding?": "선택한 인코딩으로 이 문서를 다시 불러올까요?",
+        "Unsaved changes will be lost.": "저장하지 않은 변경 사항이 손실됩니다.",
+        "Reload": "다시 불러오기",
+        "The document contains characters that cannot be saved in %@.": "문서에 %@(으)로 저장할 수 없는 문자가 있습니다.",
+        "Save it as UTF-8 instead?": "대신 UTF-8로 저장할까요?",
+        "Save as UTF-8": "UTF-8로 저장",
+        "Enter a line from 1 to %d.": "1부터 %d까지의 줄 번호를 입력하세요.",
     ]
 }

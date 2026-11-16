@@ -10,24 +10,42 @@ private final class MarkColorChipView: NSView {
     }
     var onSelect: (() -> Void)?
 
-    override var intrinsicContentSize: NSSize { NSSize(width: 26, height: 18) }
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        // Plain NSViews are ignored by the accessibility tree unless told
+        // otherwise; the role/label set by MarkPaneView would not surface.
+        setAccessibilityElement(true)
+    }
+
+    required init?(coder: NSCoder) {
+        super.init(coder: coder)
+        setAccessibilityElement(true)
+    }
+
+    override var intrinsicContentSize: NSSize { NSSize(width: 28, height: 22) }
+
+    /// The Find window is often not key when the user reaches for a chip;
+    /// without this the first click only activates the window.
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 
     override func draw(_ dirtyRect: NSRect) {
-        if isSelected {
-            let ring = NSBezierPath(roundedRect: bounds.insetBy(dx: 1, dy: 1),
-                                    xRadius: 4, yRadius: 4)
-            NSColor.controlAccentColor.setStroke()
-            ring.lineWidth = 2
-            ring.stroke()
-        }
-
-        let swatch = NSBezierPath(roundedRect: bounds.insetBy(dx: 3.5, dy: 3.5),
-                                  xRadius: 3, yRadius: 3)
+        let swatchRect = bounds.insetBy(dx: 3, dy: 2)
+        let swatch = NSBezierPath(roundedRect: swatchRect, xRadius: 4, yRadius: 4)
         color.setFill()
         swatch.fill()
-        NSColor.separatorColor.setStroke()
-        swatch.lineWidth = 1
+        NSColor.black.withAlphaComponent(0.25).setStroke()
+        swatch.lineWidth = 0.5
         swatch.stroke()
+
+        if isSelected {
+            // Ring sits outside the swatch with a gap, in the label colour, so
+            // it stays visible on every swatch hue (accent blue vanished on blue).
+            let ringRect = bounds.insetBy(dx: 0.75, dy: 0.75)
+            let ring = NSBezierPath(roundedRect: ringRect, xRadius: 6, yRadius: 6)
+            NSColor.labelColor.setStroke()
+            ring.lineWidth = 1.5
+            ring.stroke()
+        }
     }
 
     override func mouseDown(with event: NSEvent) {
@@ -56,8 +74,8 @@ final class MarkPaneView: FindPaneBase {
             chip.setAccessibilityLabel(LF("Color %d", index + 1))
             chip.setAccessibilityRole(.button)
             chip.onSelect = { [weak self] in self?.selectColor(index) }
-            chip.widthAnchor.constraint(equalToConstant: 26).isActive = true
-            chip.heightAnchor.constraint(equalToConstant: 18).isActive = true
+            chip.widthAnchor.constraint(equalToConstant: 28).isActive = true
+            chip.heightAnchor.constraint(equalToConstant: 22).isActive = true
             chips.append(chip)
             chipViews.append(chip)
         }

@@ -8,6 +8,7 @@
 #include "Lexilla.h"
 
 #include <ctype.h>
+#include <vector>
 
 // Lexilla exports this C entry point; when statically linked we declare it here.
 extern "C" Scintilla::ILexer5 *CreateLexer(const char *name);
@@ -167,8 +168,14 @@ static NSStringEncoding detectEncoding(NSData *data) {
 @property (nonatomic, assign) BOOL darkTheme;
 @property (nonatomic, copy, nullable) NSString *filePath;
 @property (nonatomic, readwrite) NSStringEncoding fileEncoding;
+/// Whether the bytes loaded from disk began with a byte-order mark. Saves in
+/// the same encoding re-emit it, so a UTF-8 BOM file stays a BOM file.
+@property (nonatomic, assign) BOOL fileHasBOM;
 - (void)updateDirtyState;
 - (BOOL)patternNeedsMultilineEngine:(NSData *)needle;
+- (NSData *)dataByPrependingBOM:(const uint8_t *)bom
+                         length:(NSUInteger)length
+                         toData:(NSData *)body;
 @end
 
 @implementation EditorBridge
@@ -263,8 +270,8 @@ static NSStringEncoding detectEncoding(NSData *data) {
     for (int indicator = INDICATOR_MARK_FIRST; indicator <= INDICATOR_MARK_LAST; indicator++) {
         [sci message:SCI_INDICSETSTYLE        wParam:indicator lParam:INDIC_ROUNDBOX];
         [sci message:SCI_INDICSETUNDER        wParam:indicator lParam:1];
-        [sci message:SCI_INDICSETALPHA        wParam:indicator lParam:70];
-        [sci message:SCI_INDICSETOUTLINEALPHA wParam:indicator lParam:100];
+        [sci message:SCI_INDICSETALPHA        wParam:indicator lParam:110];
+        [sci message:SCI_INDICSETOUTLINEALPHA wParam:indicator lParam:255];
     }
 
     // Default font. "SF Mono" ships with Terminal/Xcode but is not installed as
@@ -310,6 +317,13 @@ static NSStringEncoding detectEncoding(NSData *data) {
     self.filePath = path;
     self.fileEncoding = encoding;
 
+    const uint8_t *bytes = (const uint8_t *)data.bytes;
+    const NSUInteger len = data.length;
+    self.fileHasBOM =
+        (len >= 3 && bytes[0] == 0xEF && bytes[1] == 0xBB && bytes[2] == 0xBF) ||
+        (len >= 2 && ((bytes[0] == 0xFF && bytes[1] == 0xFE) ||
+                      (bytes[0] == 0xFE && bytes[1] == 0xFF)));
+
     NSString *text = [[NSString alloc] initWithData:data encoding:encoding];
     if (!text) {
         text = [[NSString alloc] initWithData:data encoding:NSISOLatin1StringEncoding];
@@ -330,16 +344,49 @@ static NSStringEncoding detectEncoding(NSData *data) {
 }
 
 - (BOOL)writeFile:(NSString *)path {
-    NSError *error = nil;
-    BOOL ok = [[self.sci string] writeToFile:path
-                                  atomically:YES
-                                    encoding:NSUTF8StringEncoding
-                                       error:&error];
-    if (ok) {
-        [self.sci message:SCI_SETSAVEPOINT wParam:0 lParam:0];
-        self.fileEncoding = NSUTF8StringEncoding;
+    return [self writeFile:path encoding:NSUTF8StringEncoding];
+}
+
+- (BOOL)canEncodeWithEncoding:(NSStringEncoding)encoding {
+    NSString *text = [self.sci string] ?: @"";
+    return [text dataUsingEncoding:encoding allowLossyConversion:NO] != nil;
+}
+
+- (BOOL)writeFile:(NSString *)path encoding:(NSStringEncoding)encoding {
+    NSString *text = [self.sci string] ?: @"";
+    NSData *body = [text dataUsingEncoding:encoding allowLossyConversion:NO];
+    if (!body) return NO;
+
+    static const uint8_t utf8BOM[] = {0xEF, 0xBB, 0xBF};
+    static const uint8_t utf16LEBOM[] = {0xFF, 0xFE};
+    static const uint8_t utf16BEBOM[] = {0xFE, 0xFF};
+
+    NSData *payload = body;
+    if (encoding == NSUTF16LittleEndianStringEncoding) {
+        payload = [self dataByPrependingBOM:utf16LEBOM length:sizeof(utf16LEBOM) toData:body];
+    } else if (encoding == NSUTF16BigEndianStringEncoding) {
+        payload = [self dataByPrependingBOM:utf16BEBOM length:sizeof(utf16BEBOM) toData:body];
+    } else if (encoding == NSUTF8StringEncoding && self.fileHasBOM) {
+        payload = [self dataByPrependingBOM:utf8BOM length:sizeof(utf8BOM) toData:body];
     }
-    return ok;
+
+    NSError *error = nil;
+    if (![payload writeToFile:path options:NSDataWritingAtomic error:&error]) {
+        return NO;
+    }
+    [self.sci message:SCI_SETSAVEPOINT wParam:0 lParam:0];
+    self.fileEncoding = encoding;
+    // Keep reloads (encoding switches) pointed at the file just written.
+    self.filePath = path;
+    return YES;
+}
+
+- (NSData *)dataByPrependingBOM:(const uint8_t *)bom
+                         length:(NSUInteger)length
+                         toData:(NSData *)body {
+    NSMutableData *out = [NSMutableData dataWithBytes:bom length:length];
+    [out appendData:body];
+    return out;
 }
 
 // ---------------------------------------------------------------------------
@@ -352,6 +399,27 @@ static NSStringEncoding detectEncoding(NSData *data) {
 
 - (void)setText:(NSString *)text {
     [self.sci setString:text ?: @""];
+}
+
+- (NSString *)textInRange:(NSInteger)start end:(NSInteger)end {
+    ScintillaView *sci = self.sci;
+    const sptr_t docLen = [sci message:SCI_GETLENGTH wParam:0 lParam:0];
+    const sptr_t s = [self clampPosition:start docLength:docLen];
+    const sptr_t e = [self clampPosition:end docLength:docLen];
+    if (e <= s) return @"";
+
+    std::vector<char> buffer((size_t)(e - s) + 1, '\0');
+    Sci_TextRange range;
+    range.chrg.cpMin = s;
+    range.chrg.cpMax = e;
+    range.lpstrText = buffer.data();
+    sptr_t copied = [sci message:SCI_GETTEXTRANGE wParam:0 lParam:(sptr_t)&range];
+    if (copied <= 0) return @"";
+
+    NSString *text = [[NSString alloc] initWithBytes:buffer.data()
+                                             length:(NSUInteger)copied
+                                           encoding:NSUTF8StringEncoding];
+    return text ?: @"";
 }
 
 // ---------------------------------------------------------------------------
@@ -892,12 +960,20 @@ static NSStringEncoding detectEncoding(NSData *data) {
         return [[XEditorCountResult alloc] initWithStatus:all.status count:0];
     }
 
-    [sci message:SCI_SETINDICATORCURRENT wParam:(sptr_t)indicator lParam:0];
     NSInteger filled = 0;
     for (XEditorFindMatch *match in all.matches) {
         if (match.end <= match.start) continue; // invisible, skip
-        [sci message:SCI_INDICATORFILLRANGE wParam:(sptr_t)match.start
-                                            lParam:(sptr_t)(match.end - match.start)];
+        const sptr_t length = (sptr_t)(match.end - match.start);
+        // Each match carries one colour: drop any other mark colour already
+        // on this range, otherwise the higher-numbered indicator paints over
+        // the new one and re-marking in a different colour looks unchanged.
+        for (int other = INDICATOR_MARK_FIRST; other <= INDICATOR_MARK_LAST; other++) {
+            if (other == indicator) continue;
+            [sci message:SCI_SETINDICATORCURRENT wParam:(sptr_t)other lParam:0];
+            [sci message:SCI_INDICATORCLEARRANGE wParam:(sptr_t)match.start lParam:length];
+        }
+        [sci message:SCI_SETINDICATORCURRENT wParam:(sptr_t)indicator lParam:0];
+        [sci message:SCI_INDICATORFILLRANGE wParam:(sptr_t)match.start lParam:length];
         filled++;
     }
     return [[XEditorCountResult alloc] initWithStatus:XEditorFindStatusOk count:filled];

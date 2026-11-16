@@ -325,9 +325,8 @@ final class FindWindowController: NSObject, NSWindowDelegate {
                 pane.searchField.stringValue = settings.lastQuery
             }
         }
-        if !settings.lastReplacement.isEmpty {
-            replacePane.replacementField?.stringValue = settings.lastReplacement
-        }
+        // Always restore, including an intentionally empty replacement.
+        replacePane.replacementField?.stringValue = settings.lastReplacement
     }
 
     private func prefillFromSelectionOrHistory() {
@@ -339,9 +338,7 @@ final class FindWindowController: NSObject, NSWindowDelegate {
         for pane in panes {
             pane.searchField.stringValue = text
         }
-        if !settings.lastReplacement.isEmpty {
-            replacePane.replacementField?.stringValue = settings.lastReplacement
-        }
+        replacePane.replacementField?.stringValue = settings.lastReplacement
     }
 
     // MARK: - Status
@@ -385,7 +382,7 @@ final class FindWindowController: NSObject, NSWindowDelegate {
             return nil
         }
         settings.recordQuery(text)
-        if !pane.replacementText.isEmpty {
+        if pane.replacementField != nil {
             settings.recordReplacement(pane.replacementText)
         }
         reloadHistories()
@@ -457,12 +454,20 @@ final class FindWindowController: NSObject, NSWindowDelegate {
                 setStatus(L("No document is open."), kind: .warning)
                 return
             }
-            let count = session.count(query: query)?.count ?? 0
-            guard count > 0 else {
+            let countResult = session.count(query: query)
+            guard let countResult else {
+                setStatus(L("No document is open."), kind: .warning)
+                return
+            }
+            guard countResult.status == .ok else {
+                report(countResult.status, text: query.text)
+                return
+            }
+            guard countResult.count > 0 else {
                 report(.notFound, text: query.text)
                 return
             }
-            guard confirmLargeResult(count: count) else { return }
+            guard confirmLargeResult(count: countResult.count) else { return }
 
             let all = session.findAll(query: query, document: doc, maxCount: Self.currentDocumentLimit)
             guard all.status == .ok else {
@@ -565,19 +570,10 @@ final class FindWindowController: NSObject, NSWindowDelegate {
         }
 
         var pieces: [String] = []
-        var currentLine = -1
-        var lineBytes: [UInt8] = []
         for match in all.matches {
-            let line = Int(match.line)
-            if line != currentLine {
-                currentLine = line
-                lineBytes = Array(doc.editor.lineText(line).utf8)
-            }
-            let lineStart = Int(doc.editor.lineStartPosition(line))
-            let start = Int(match.start) - lineStart
-            let end = Int(match.end) - lineStart
-            guard start >= 0, end >= start, end <= lineBytes.count else { continue }
-            pieces.append(String(decoding: lineBytes[start..<end], as: UTF8.self))
+            // Byte-range read handles matches that span lines; slicing per
+            // line silently dropped every multi-line match.
+            pieces.append(doc.editor.text(fromByte: match.start, toByte: match.end))
         }
         guard !pieces.isEmpty else {
             report(.notFound, text: query.text)
@@ -683,12 +679,20 @@ final class FindWindowController: NSObject, NSWindowDelegate {
             setStatus(L("No document is open."), kind: .warning)
             return
         }
-        let count = session.count(query: query)?.count ?? 0
-        guard count > 0 else {
+        let countResult = session.count(query: query)
+        guard let countResult else {
+            setStatus(L("No document is open."), kind: .warning)
+            return
+        }
+        guard countResult.status == .ok else {
+            report(countResult.status, text: query.text)
+            return
+        }
+        guard countResult.count > 0 else {
             report(.notFound, text: query.text)
             return
         }
-        guard confirmReplaceAll(count: count, fileCount: 1) else { return }
+        guard confirmReplaceAll(count: countResult.count, fileCount: 1) else { return }
 
         let result = session.replaceAll(query: query, document: doc)
         guard result.status == .ok else {
@@ -720,7 +724,7 @@ final class FindWindowController: NSObject, NSWindowDelegate {
         }
 
         settings.recordQuery(text)
-        if !pane.replacementText.isEmpty {
+        if pane.replacementField != nil {
             settings.recordReplacement(pane.replacementText)
         }
         reloadHistories()

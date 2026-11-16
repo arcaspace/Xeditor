@@ -352,5 +352,16 @@ extension LocalizationStrings {
         "There is no result to swap.": "入れ替える結果がありません。",
         "Swapped direction.": "方向を入れ替えました。",
         "Line %d, column %d: %@": "%d 行、%d 列：%@",
+        // MARK: Main window, status bar and save
+        "%d bytes": "%d バイト",
+        "Ln %d, Col %d": "%d 行、%d 列",
+        "%d lines": "%d 行",
+        "Reload this document in the selected encoding?": "選択したエンコーディングでこの書類を再読み込みしますか？",
+        "Unsaved changes will be lost.": "保存されていない変更は失われます。",
+        "Reload": "再読み込み",
+        "The document contains characters that cannot be saved in %@.": "この書類には %@ で保存できない文字が含まれています。",
+        "Save it as UTF-8 instead?": "代わりに UTF-8 で保存しますか？",
+        "Save as UTF-8": "UTF-8 で保存",
+        "Enter a line from 1 to %d.": "1 から %d までの行番号を入力してください。",
     ]
 }

@@ -352,5 +352,16 @@ extension LocalizationStrings {
         "There is no result to swap.": "沒有可交換的結果。",
         "Swapped direction.": "已交換方向。",
         "Line %d, column %d: %@": "第 %d 行，第 %d 列：%@",
+        // MARK: Main window, status bar and save
+        "%d bytes": "%d 位元組",
+        "Ln %d, Col %d": "行 %d，欄 %d",
+        "%d lines": "%d 行",
+        "Reload this document in the selected encoding?": "以所選編碼重新載入此文件？",
+        "Unsaved changes will be lost.": "未儲存的變更將會遺失。",
+        "Reload": "重新載入",
+        "The document contains characters that cannot be saved in %@.": "文件包含無法以 %@ 儲存的字元。",
+        "Save it as UTF-8 instead?": "是否改以 UTF-8 儲存？",
+        "Save as UTF-8": "存為 UTF-8",
+        "Enter a line from 1 to %d.": "請輸入 1 到 %d 之間的行號。",
     ]
 }

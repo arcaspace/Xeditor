@@ -90,7 +90,7 @@ private final class RegexHelpView: NSView {
         columns.spacing = 44
 
         let footerText = NSMutableAttributedString(
-            string: L("Syntax follows the "),
+            string: L("Syntax follows the") + " ",
             attributes: [.font: NSFont.systemFont(ofSize: 11),
                          .foregroundColor: NSColor.secondaryLabelColor])
         footerText.append(NSAttributedString(

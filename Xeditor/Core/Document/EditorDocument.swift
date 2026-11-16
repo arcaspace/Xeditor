@@ -139,7 +139,9 @@ final class EditorDocument: ObservableObject, Identifiable {
             return
         }
         editor.reload(withEncoding: targetEncoding.id)
-        encoding = targetEncoding
+        // If the bytes cannot be decoded in the requested encoding the bridge
+        // falls back to Latin-1; report what is actually on screen.
+        encoding = DocumentEncoding.matching(UInt(editor.fileEncoding))
         lineCount = Int(editor.lineCount())
         cursorLine = Int(editor.currentLine())
         cursorColumn = Int(editor.currentColumn())
@@ -150,10 +152,21 @@ final class EditorDocument: ObservableObject, Identifiable {
     @discardableResult
     func save(to destination: URL? = nil) -> Bool {
         guard let target = destination ?? url else { return false }
-        guard editor.writeFile(target.path) else { return false }
+        var targetEncoding = encoding
+        if !editor.canEncode(withEncoding: targetEncoding.id) {
+            let alert = NSAlert()
+            alert.messageText = LF("The document contains characters that cannot be saved in %@.", targetEncoding.name)
+            alert.informativeText = L("Save it as UTF-8 instead?")
+            alert.addButton(withTitle: L("Save as UTF-8"))
+            alert.addButton(withTitle: L("Cancel"))
+            guard alert.runModal() == .alertFirstButtonReturn else { return false }
+            targetEncoding = .utf8
+        }
+        guard editor.writeFile(target.path, encoding: targetEncoding.id) else { return false }
 
         let moved = destination != nil
         url = target
+        encoding = targetEncoding
         isDirty = editor.isDirty
 
         if moved, let preset = LanguagePreset.matching(url: target) {

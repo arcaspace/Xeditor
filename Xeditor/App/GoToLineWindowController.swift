@@ -4,13 +4,14 @@ protocol GoToLineDelegate: AnyObject {
     func goToLineDidSelect(line: Int)
 }
 
-final class GoToLineWindowController: NSWindowController {
+final class GoToLineWindowController: NSWindowController, NSTextFieldDelegate {
     weak var delegate: GoToLineDelegate?
     private let maxLine: Int
     private let currentLine: Int
 
     private let inputField = NSTextField()
     private let infoLabel = NSTextField(labelWithString: "")
+    private let errorLabel = NSTextField(labelWithString: "")
     private let goButton = NSButton()
     private let cancelButton = NSButton()
 
@@ -20,7 +21,7 @@ final class GoToLineWindowController: NSWindowController {
         self.delegate = delegate
 
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 260, height: 130),
+            contentRect: NSRect(x: 0, y: 0, width: 260, height: 150),
             styleMask: [.titled, .closable],
             backing: .buffered,
             defer: false
@@ -41,21 +42,28 @@ final class GoToLineWindowController: NSWindowController {
 
         let titleLabel = NSTextField(labelWithString: L("Go to Line"))
         titleLabel.font = NSFont.boldSystemFont(ofSize: 13)
-        titleLabel.frame = NSRect(x: 20, y: 92, width: 220, height: 20)
+        titleLabel.frame = NSRect(x: 20, y: 112, width: 220, height: 20)
         contentView.addSubview(titleLabel)
 
         inputField.font = NSFont.systemFont(ofSize: 13)
         inputField.stringValue = "\(currentLine)"
-        inputField.frame = NSRect(x: 20, y: 60, width: 100, height: 22)
+        inputField.frame = NSRect(x: 20, y: 80, width: 100, height: 22)
         inputField.target = self
         inputField.action = #selector(onGo)
+        inputField.delegate = self
         contentView.addSubview(inputField)
 
         infoLabel.font = NSFont.systemFont(ofSize: 12)
         infoLabel.textColor = .secondaryLabelColor
         infoLabel.stringValue = LF("of %d", maxLine)
-        infoLabel.frame = NSRect(x: 126, y: 60, width: 110, height: 20)
+        infoLabel.frame = NSRect(x: 126, y: 80, width: 110, height: 20)
         contentView.addSubview(infoLabel)
+
+        errorLabel.font = NSFont.systemFont(ofSize: 11)
+        errorLabel.textColor = .systemRed
+        errorLabel.isHidden = true
+        errorLabel.frame = NSRect(x: 20, y: 52, width: 220, height: 16)
+        contentView.addSubview(errorLabel)
 
         cancelButton.title = L("Cancel")
         cancelButton.bezelStyle = .rounded
@@ -80,6 +88,11 @@ final class GoToLineWindowController: NSWindowController {
         window?.makeKeyAndOrderFront(sender)
         window?.makeFirstResponder(inputField)
         inputField.selectText(nil)
+        errorLabel.isHidden = true
+    }
+
+    func controlTextDidChange(_ notification: Notification) {
+        errorLabel.isHidden = true
     }
 
     @objc private func onGo() {
@@ -88,6 +101,10 @@ final class GoToLineWindowController: NSWindowController {
             close()
         } else {
             NSSound.beep()
+            errorLabel.stringValue = LF("Enter a line from 1 to %d.", maxLine)
+            errorLabel.isHidden = false
+            window?.makeFirstResponder(inputField)
+            inputField.selectText(nil)
         }
     }
 

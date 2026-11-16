@@ -131,8 +131,11 @@ final class FindSettings {
     }
 
     func recordReplacement(_ text: String) {
-        guard !text.isEmpty, text.count <= Self.historyMaxLength else { return }
+        guard text.count <= Self.historyMaxLength else { return }
+        // An empty replacement is meaningful ("delete the matches") and must
+        // survive reopening the panel; it just does not belong in the history.
         lastReplacement = text
+        guard !text.isEmpty else { return }
         var list = replaceHistory.filter { $0 != text }
         list.insert(text, at: 0)
         if list.count > historyLimit { list.removeLast(list.count - historyLimit) }

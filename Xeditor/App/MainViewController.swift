@@ -183,24 +183,29 @@ final class MainViewController: NSViewController, NativeTabBarDelegate, FindHost
         reloadAll()
     }
 
-    func closeDocumentWithConfirmation(_ document: EditorDocument) {
-        if document.isDirty {
-            let alert = NSAlert()
-            alert.messageText = LF("Do you want to save the changes made to “%@”?", document.displayName)
-            alert.informativeText = L("Your changes will be lost if you don’t save them.")
-            alert.addButton(withTitle: L("Save"))
-            alert.addButton(withTitle: L("Cancel"))
-            alert.addButton(withTitle: L("Don’t Save"))
-            switch alert.runModal() {
-            case .alertFirstButtonReturn:
-                let ok = document.url == nil ? saveDocumentAs(document) : document.save()
-                guard ok else { return }
-            case .alertSecondButtonReturn:
-                return
-            default:
-                break
-            }
+    /// Asks to save a dirty document. Returns false when the user cancels or a
+    /// save fails, so both tab-close and app-quit can abort.
+    @discardableResult
+    func confirmSaveIfNeeded(_ document: EditorDocument) -> Bool {
+        guard document.isDirty else { return true }
+        let alert = NSAlert()
+        alert.messageText = LF("Do you want to save the changes made to “%@”?", document.displayName)
+        alert.informativeText = L("Your changes will be lost if you don’t save them.")
+        alert.addButton(withTitle: L("Save"))
+        alert.addButton(withTitle: L("Cancel"))
+        alert.addButton(withTitle: L("Don’t Save"))
+        switch alert.runModal() {
+        case .alertFirstButtonReturn:
+            return document.url == nil ? saveDocumentAs(document) : document.save()
+        case .alertSecondButtonReturn:
+            return false
+        default:
+            return true
         }
+    }
+
+    func closeDocumentWithConfirmation(_ document: EditorDocument) {
+        guard confirmSaveIfNeeded(document) else { return }
         store.close(document)
         reloadAll()
     }
@@ -262,7 +267,22 @@ final class MainViewController: NSViewController, NativeTabBarDelegate, FindHost
     }
 
     func statusBarDidChangeEncoding(_ encoding: DocumentEncoding) {
-        store.activeDocument?.reload(withEncoding: encoding)
+        guard let doc = store.activeDocument else { return }
+        guard encoding != doc.encoding else { return }
+        // Reloading replaces the buffer and clears the undo stack, so ask first
+        // when there are edits that are not on disk.
+        if doc.url != nil, doc.isDirty {
+            let alert = NSAlert()
+            alert.messageText = L("Reload this document in the selected encoding?")
+            alert.informativeText = L("Unsaved changes will be lost.")
+            alert.addButton(withTitle: L("Reload"))
+            alert.addButton(withTitle: L("Cancel"))
+            guard alert.runModal() == .alertFirstButtonReturn else {
+                statusBar.update(document: doc)
+                return
+            }
+        }
+        doc.reload(withEncoding: encoding)
         updateActiveDocumentContent()
     }
 
@@ -272,6 +292,7 @@ final class MainViewController: NSViewController, NativeTabBarDelegate, FindHost
     func applyLocalization() {
         tabBar.applyLocalization()
         resultsPanel.applyLocalization()
+        statusBar.update(document: store.activeDocument)
     }
 }
 

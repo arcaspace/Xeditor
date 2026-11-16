@@ -125,8 +125,8 @@ final class StatusBarView: NSView {
         languageButton.isHidden = false
         encodingButton.isHidden = false
 
-        positionLabel.stringValue = "Ln \(doc.cursorLine), Col \(doc.cursorColumn)"
-        lineCountLabel.stringValue = "\(doc.lineCount) lines"
+        positionLabel.stringValue = LF("Ln %d, Col %d", doc.cursorLine, doc.cursorColumn)
+        lineCountLabel.stringValue = LF("%d lines", doc.lineCount)
 
         languageButton.selectItem(withTitle: doc.language.title)
         encodingButton.selectItem(withTitle: doc.encoding.name)

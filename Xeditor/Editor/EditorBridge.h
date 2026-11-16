@@ -86,6 +86,11 @@ typedef NS_ENUM(NSInteger, XEditorFindStatus) {
 - (void)loadFile:(NSString *)path;
 - (void)loadFile:(NSString *)path encoding:(NSStringEncoding)encoding;
 - (BOOL)writeFile:(NSString *)path;
+/// Writes the buffer in `encoding`, preserving a UTF-8 BOM and emitting the
+/// UTF-16 BOM. Returns NO when the text cannot be represented in `encoding`.
+- (BOOL)writeFile:(NSString *)path encoding:(NSStringEncoding)encoding;
+/// Whether every character can be encoded without lossy conversion.
+- (BOOL)canEncodeWithEncoding:(NSStringEncoding)encoding;
 
 /// The encoding detected (or manually set) for the current file.
 @property (nonatomic, readonly) NSStringEncoding fileEncoding;
@@ -97,6 +102,10 @@ typedef NS_ENUM(NSInteger, XEditorFindStatus) {
 
 - (NSString *)text;
 - (void)setText:(NSString *)text;
+/// Text between two UTF-8 byte positions (clamped). Used to read matches
+/// without touching the selection.
+- (NSString *)textInRange:(NSInteger)start end:(NSInteger)end
+    NS_SWIFT_NAME(text(fromByte:toByte:));
 
 // MARK: - Lexer
 
