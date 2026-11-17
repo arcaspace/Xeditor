@@ -63,8 +63,8 @@ targets:
       base:
         PRODUCT_NAME: Xeditor
         PRODUCT_BUNDLE_IDENTIFIER: com.xeditor.app
-        MARKETING_VERSION: "0.3.0"
-        CURRENT_PROJECT_VERSION: "3"
+        MARKETING_VERSION: "0.2.0"
+        CURRENT_PROJECT_VERSION: "2"
         SWIFT_OBJC_BRIDGING_HEADER: "$(SRCROOT)/Xeditor/Editor/Xeditor-Bridging-Header.h"
         HEADER_SEARCH_PATHS:
           - "$(SRCROOT)/ThirdParty/scintilla/include"

@@ -1592,22 +1592,22 @@ static NSStringEncoding detectEncoding(NSData *data) {
     NSColor *background, *foreground, *dim, *selection, *caretLine, *braceHL;
 
     if (dark) {
-        background = [NSColor colorWithSRGBRed:0.122 green:0.122 blue:0.141 alpha:1.0]; // #1F1F24
-        foreground = [NSColor colorWithSRGBRed:0.871 green:0.871 blue:0.878 alpha:1.0]; // #DEDEE0
-        dim        = [NSColor colorWithSRGBRed:0.557 green:0.557 blue:0.576 alpha:1.0]; // #8E8E93
-        selection  = [NSColor colorWithSRGBRed:0.227 green:0.298 blue:0.388 alpha:1.0]; // #3A4C63
-        caretLine  = [NSColor colorWithSRGBRed:0.137 green:0.137 blue:0.161 alpha:1.0]; // #232329
-        braceHL    = [NSColor colorWithSRGBRed:0.173 green:0.275 blue:0.212 alpha:1.0]; // #2C4636
+        background = [NSColor colorWithSRGBRed:0.11 green:0.11 blue:0.12 alpha:1.0];
+        foreground = [NSColor colorWithSRGBRed:0.87 green:0.87 blue:0.88 alpha:1.0];
+        dim        = [NSColor colorWithSRGBRed:0.52 green:0.52 blue:0.55 alpha:1.0];
+        selection  = [NSColor colorWithSRGBRed:0.20 green:0.30 blue:0.45 alpha:1.0];
+        caretLine  = [NSColor colorWithSRGBRed:0.15 green:0.15 blue:0.16 alpha:1.0];
+        braceHL    = [NSColor colorWithSRGBRed:0.25 green:0.40 blue:0.30 alpha:1.0];
     } else {
         // Explicit sRGB values, not dynamic system colours: textBackgroundColor
         // & co. resolve against the system appearance, so with a forced light
         // theme on a dark system they would still come back dark.
         background = [NSColor colorWithSRGBRed:1.00 green:1.00 blue:1.00 alpha:1.0];
         foreground = [NSColor colorWithSRGBRed:0.12 green:0.12 blue:0.14 alpha:1.0];
-        dim        = [NSColor colorWithSRGBRed:0.431 green:0.431 blue:0.451 alpha:1.0]; // #6E6E73
-        selection  = [NSColor colorWithSRGBRed:0.702 green:0.843 blue:1.000 alpha:1.0]; // #B3D7FF
-        caretLine  = [NSColor colorWithSRGBRed:0.957 green:0.969 blue:0.984 alpha:1.0]; // #F4F7FB
-        braceHL    = [NSColor colorWithSRGBRed:0.851 green:0.941 blue:0.851 alpha:1.0]; // #D9F0D9
+        dim        = [NSColor colorWithSRGBRed:0.45 green:0.45 blue:0.47 alpha:1.0];
+        selection  = [NSColor colorWithSRGBRed:0.66 green:0.80 blue:0.96 alpha:1.0];
+        caretLine  = [NSColor colorWithSRGBRed:0.93 green:0.95 blue:0.98 alpha:1.0];
+        braceHL    = [NSColor colorWithSRGBRed:0.80 green:0.93 blue:0.80 alpha:1.0];
     }
 
     const int bg   = ColorRefFromNSColor(background);
@@ -1638,8 +1638,8 @@ static NSStringEncoding detectEncoding(NSData *data) {
     // to sit behind code, cool enough to read as a designed accent rather than
     // leftover UI chrome.
     NSColor *whiteSpaceColor = dark
-        ? [NSColor colorWithSRGBRed:0.369 green:0.392 blue:0.424 alpha:1.0] // #5E646C
-        : [NSColor colorWithSRGBRed:0.714 green:0.745 blue:0.788 alpha:1.0]; // #B6BEC9
+        ? [NSColor colorWithSRGBRed:0.533 green:0.753 blue:0.816 alpha:1.0] // #88C0D0
+        : [NSColor colorWithSRGBRed:0.369 green:0.506 blue:0.675 alpha:1.0]; // #5E81AC
     [sci message:SCI_SETWHITESPACEFORE wParam:TRUE
                                  lParam:ColorRefFromNSColor(whiteSpaceColor)];
     [sci message:SCI_STYLESETFORE      wParam:STYLE_INDENTGUIDE lParam:dRef];
@@ -1674,16 +1674,15 @@ static NSStringEncoding detectEncoding(NSData *data) {
     [sci message:SCI_STYLESETBACK  wParam:STYLE_BRACELIGHT lParam:brRef];
     [sci message:SCI_STYLESETBOLD  wParam:STYLE_BRACELIGHT lParam:1];
     [sci message:SCI_STYLESETFORE  wParam:STYLE_BRACEBAD
-                             lParam:ColorRefFromNSColor(dark ? [NSColor colorWithSRGBRed:1.0 green:0.412 blue:0.380 alpha:1.0]
-                                                             : [NSColor colorWithSRGBRed:0.843 green:0.0 blue:0.082 alpha:1.0])];
+                             lParam:ColorRefFromNSColor([NSColor systemRedColor])];
     [sci message:SCI_STYLESETBOLD  wParam:STYLE_BRACEBAD lParam:1];
 
     // Occurrence highlight: a warm amber that stands apart from both the
     // syntax palette and the blue selection, so the current selection and its
     // other occurrences stay distinguishable.
     NSColor *occurrence = dark
-        ? [NSColor colorWithSRGBRed:0.851 green:0.663 blue:0.247 alpha:1.0] // #D9A93F
-        : [NSColor colorWithSRGBRed:0.949 green:0.757 blue:0.306 alpha:1.0]; // #F2C14E
+        ? [NSColor colorWithSRGBRed:0.95 green:0.72 blue:0.25 alpha:1.0]
+        : [NSColor colorWithSRGBRed:0.96 green:0.78 blue:0.30 alpha:1.0];
     [sci message:SCI_INDICSETFORE wParam:INDICATOR_OCCURRENCE
                                  lParam:ColorRefFromNSColor(occurrence)];
 
@@ -1702,22 +1701,20 @@ static NSStringEncoding detectEncoding(NSData *data) {
         return [NSColor colorWithSRGBRed:r green:g blue:b alpha:1.0];
     };
 
-    // Apple-native syntax palette (Xcode-like). Explicit sRGB throughout so a
-    // forced light/dark theme never picks up the other mode's colours.
-    NSColor *comment  = dark ? rgb(0.498, 0.549, 0.596) : rgb(0.361, 0.416, 0.471); // #7F8C98 / #5C6A78
-    NSColor *keyword  = dark ? rgb(0.988, 0.373, 0.639) : rgb(0.631, 0.059, 0.569); // #FC5FA3 / #A10F91
-    NSColor *number   = dark ? rgb(0.816, 0.749, 0.412) : rgb(0.110, 0.000, 0.812); // #D0BF69 / #1C00CF
-    NSColor *string   = dark ? rgb(0.988, 0.416, 0.365) : rgb(0.769, 0.102, 0.086); // #FC6A5D / #C41A16
-    NSColor *preproc  = dark ? rgb(0.992, 0.561, 0.247) : rgb(0.471, 0.286, 0.165); // #FD8F3F / #78492A
-    NSColor *opColor  = dark ? rgb(0.780, 0.780, 0.800) : rgb(0.227, 0.227, 0.235); // #C7C7CC / #3A3A3C
-    NSColor *typeCol  = dark ? rgb(0.365, 0.847, 1.000) : rgb(0.247, 0.431, 0.455); // #5DD8FF / #3F6E74
-    NSColor *funcCol  = dark ? rgb(0.404, 0.718, 0.643) : rgb(0.196, 0.427, 0.455); // #67B7A4 / #326D74
-    NSColor *attrCol  = dark ? rgb(0.800, 0.592, 0.408) : rgb(0.514, 0.424, 0.157); // #CC9768 / #836C28
-    NSColor *varCol   = dark ? rgb(0.706, 0.549, 0.949) : rgb(0.059, 0.408, 0.627); // #B48CF2 / #0F68A0
-    NSColor *errorCol = dark ? rgb(1.000, 0.412, 0.380) : rgb(0.843, 0.000, 0.082); // #FF6961 / #D70015
-    NSColor *diffAdd  = dark ? rgb(0.494, 0.886, 0.659) : rgb(0.102, 0.498, 0.216); // #7EE2A8 / #1A7F37
-    NSColor *diffDel  = dark ? rgb(1.000, 0.482, 0.447) : rgb(0.812, 0.133, 0.180); // #FF7B72 / #CF222E
-    NSColor *diffChg  = dark ? rgb(0.890, 0.702, 0.255) : rgb(0.604, 0.404, 0.000); // #E3B341 / #9A6700
+    NSColor *comment  = dark ? rgb(0.42, 0.60, 0.34) : rgb(0.35, 0.53, 0.30);
+    NSColor *keyword  = dark ? rgb(0.34, 0.61, 0.84) : rgb(0.00, 0.20, 0.80);
+    NSColor *number   = dark ? rgb(0.71, 0.81, 0.66) : rgb(0.55, 0.20, 0.60);
+    NSColor *string   = dark ? rgb(0.81, 0.57, 0.47) : rgb(0.77, 0.10, 0.09);
+    NSColor *preproc  = dark ? rgb(0.78, 0.53, 0.75) : rgb(0.60, 0.22, 0.60);
+    NSColor *opColor  = dark ? rgb(0.83, 0.83, 0.83) : rgb(0.20, 0.20, 0.20);
+    NSColor *typeCol  = dark ? rgb(0.45, 0.80, 0.82) : rgb(0.00, 0.43, 0.48);
+    NSColor *funcCol  = dark ? rgb(0.95, 0.80, 0.50) : rgb(0.55, 0.35, 0.00);
+    NSColor *attrCol  = dark ? rgb(0.90, 0.68, 0.40) : rgb(0.55, 0.35, 0.05);
+    NSColor *varCol   = dark ? rgb(0.80, 0.72, 0.95) : rgb(0.40, 0.20, 0.60);
+    NSColor *errorCol = [NSColor systemRedColor];
+    NSColor *diffAdd  = dark ? rgb(0.45, 0.80, 0.50) : rgb(0.10, 0.55, 0.15);
+    NSColor *diffDel  = dark ? rgb(0.95, 0.50, 0.50) : rgb(0.75, 0.15, 0.10);
+    NSColor *diffChg  = dark ? rgb(0.90, 0.75, 0.40) : rgb(0.65, 0.45, 0.00);
 
     ScintillaView *sci = self.sci;
     void (^set)(int, NSColor *) = ^(int style, NSColor *colour) {

@@ -37,7 +37,7 @@ never silently changes a file's encoding.
 
 ## Install
 
-Download `Xeditor-0.3.0.dmg` from [Releases](https://github.com/arcaspace/Xeditor/releases/latest),
+Download `Xeditor-0.2.0.dmg` from [Releases](https://github.com/arcaspace/Xeditor/releases/latest),
 open it, and drag **Xeditor** onto the **Applications** folder.
 
 The app is ad-hoc signed and not notarized. If macOS blocks the first launch,
