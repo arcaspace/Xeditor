@@ -105,14 +105,35 @@ final class AppDelegate: NSObject, NSApplicationDelegate, PreferencesDelegate, G
             store.open(url: URL(fileURLWithPath: name))
         }
         windowController?.mainVC.reloadAll()
+        presentMainWindow()
         // The delegate must acknowledge the open request, or Finder reports
         // that the document could not be opened.
         sender.reply(toOpenOrPrint: .success)
     }
 
+    /// Brings the app and its main window to the front. Opening a document
+    /// from Finder does not activate an already-running app, so the open
+    /// handler has to do it explicitly. A hidden or miniaturized window is
+    /// restored as well, matching what a Dock click would do.
+    private func presentMainWindow() {
+        if NSApp.isHidden {
+            NSApp.unhide(nil)
+        }
+        // `activate()` is cooperative on macOS 14+ and the system may refuse
+        // it for a background app; the explicit flag restores the previous
+        // behavior that a Finder-initiated open relies on.
+        NSApp.activate(ignoringOtherApps: true)
+        windowController?.showWindow(nil)
+        guard let window = windowController?.window else { return }
+        if window.isMiniaturized {
+            window.deminiaturize(nil)
+        }
+        window.makeKeyAndOrderFront(nil)
+    }
+
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
         if !flag {
-            windowController?.showWindow(nil)
+            presentMainWindow()
         }
         return true
     }
