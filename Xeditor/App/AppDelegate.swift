@@ -105,6 +105,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, PreferencesDelegate, G
             store.open(url: URL(fileURLWithPath: name))
         }
         windowController?.mainVC.reloadAll()
+        // The delegate must acknowledge the open request, or Finder reports
+        // that the document could not be opened.
+        sender.reply(toOpenOrPrint: .success)
     }
 
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {

@@ -59,6 +59,20 @@ targets:
         LSMinimumSystemVersion: "$(MACOSX_DEPLOYMENT_TARGET)"
         NSHumanReadableCopyright: "GPLv3"
         NSHighResolutionCapable: true
+        # Declares the document types Xeditor can open. Without this,
+        # LaunchServices has no reason to list the app under Finder's
+        # "Open With" menu, even though AppDelegate handles openFiles.
+        # LSHandlerRank "Alternate" makes Xeditor a candidate without
+        # stealing the default editor for every text file.
+        CFBundleDocumentTypes:
+          - CFBundleTypeName: Text Document
+            CFBundleTypeRole: Editor
+            LSHandlerRank: Alternate
+            LSItemContentTypes:
+              - public.text
+              - public.plain-text
+              - public.source-code
+              - public.data
     settings:
       base:
         PRODUCT_NAME: Xeditor
